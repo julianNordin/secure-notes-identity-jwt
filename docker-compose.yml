@@ -1,0 +1,27 @@
+# Runs the development database only. The API is deliberately not containerised:
+# P3 already proves that end of things, and here the surface worth a reviewer's
+# attention is the auth code, not another Dockerfile.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: securenotes-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-securenotes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securenotes}
+      POSTGRES_DB: ${POSTGRES_DB:-securenotes}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - notes-db-data:/var/lib/postgresql/data
+    healthcheck:
+      # Without this, `docker compose up -d db` returns as soon as the container
+      # starts, which is several seconds before Postgres will accept a connection.
+      # `dotnet ef database update` run in that window fails with a connection error.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-securenotes} -d ${POSTGRES_DB:-securenotes}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  notes-db-data:
