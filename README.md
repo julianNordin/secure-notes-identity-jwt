@@ -9,7 +9,7 @@ admins see all of them, and the notes themselves are deliberately boring so that
 part — ASP.NET Core Identity, JWT access tokens, rotating refresh tokens with reuse detection, and
 three distinct styles of authorization — is what a reader's attention lands on.
 
-**Status:** 🚧 In progress — Phase 01 of 18. See [Roadmap](#roadmap) below.
+**Status:** 🚧 In progress — Phase 01 of 18 complete. See [Roadmap](#roadmap) below.
 
 ## Why this project
 
@@ -40,7 +40,7 @@ dotnet run --project SecureNotes.Api      # http://localhost:5080
 
 ## Roadmap
 
-- [ ] **01** · Solution scaffold, repo hygiene & Compose Postgres
+- [x] **01** · Solution scaffold, repo hygiene & Compose Postgres
 - [ ] **02** · Notes domain, EF Core & first migration
 - [ ] **03** · ASP.NET Core Identity: users, roles, schema
 - [ ] **04** · Registration & password hashing
