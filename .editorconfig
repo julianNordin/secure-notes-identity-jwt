@@ -1,0 +1,25 @@
+# Shared formatting rules, so `dotnet format` and git agree with each other.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# The ecosystem convention for these is two spaces, and diffs are noisy if we fight it.
+[*.{json,yml,yaml,jsonc}]
+indent_size = 2
+
+[*.{ts,tsx,js,jsx,css,html}]
+indent_size = 2
+
+# Two trailing spaces are a hard line break in Markdown. Trimming them changes the render.
+[*.md]
+trim_trailing_whitespace = false
+
+# Visual Studio writes these back with CRLF whatever we say, so do not fight it.
+[*.{sln,cmd,bat,ps1}]
+end_of_line = crlf
