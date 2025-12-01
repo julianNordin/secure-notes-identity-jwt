@@ -1,6 +1,4 @@
-@SecureNotes.Api_HostAddress = http://localhost:5064
+@host = http://localhost:5080
 
-GET {{SecureNotes.Api_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
+### Nothing to call yet. The notes endpoints arrive in Phase 06 and the auth
+### endpoints in Phases 04, 05, 07 and 12.

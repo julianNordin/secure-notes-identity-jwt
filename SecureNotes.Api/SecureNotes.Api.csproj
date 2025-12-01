@@ -4,10 +4,12 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Swagger reads the XML doc comments off the controllers from Phase 05 onwards. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- 1591 is "missing XML comment on a public member". Turning documentation
+         generation on turns that warning on for every public type in the project,
+         which is noise: the comments that matter are on the endpoints. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.19" />
-  </ItemGroup>
 
 </Project>
