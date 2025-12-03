@@ -16,8 +16,11 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <!-- PrivateAssets=all: this is the design-time package that `dotnet ef migrations`
          needs. It is a build tool, not a runtime dependency, and shipping it to
-         anything that references this project would be wrong. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.9" PrivateAssets="all" />
+         anything that references this project would be wrong.
+
+         Held at 9.0.1, not the newest 9.0.x, to match the EF Core version that
+         Npgsql 9.0.4 depends on. See the fix commit for why that matters. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.1" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
