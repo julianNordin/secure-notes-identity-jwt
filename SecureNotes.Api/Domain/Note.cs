@@ -20,9 +20,10 @@ public class Note
     /// The owning user.
     /// </summary>
     /// <remarks>
-    /// A bare Guid rather than a navigation property, because there is no user
-    /// table to point at yet. ASP.NET Core Identity arrives in Phase 03 and the
-    /// real foreign key is added there.
+    /// A real foreign key to AspNetUsers, cascading on delete. There is no
+    /// navigation property back to the user: nothing in this project loads a note
+    /// in order to reach its owner, and an unused navigation is one more way for
+    /// a serialiser to wander into data the caller was never authorised to see.
     /// </remarks>
     public Guid OwnerId { get; set; }
 
