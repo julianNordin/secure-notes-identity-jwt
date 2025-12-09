@@ -12,29 +12,27 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
     /// <summary>
     /// Creates a new account.
     /// </summary>
+    /// <remarks>
+    /// Answers 202 whether or not the address was already registered. The two cases
+    /// are deliberately indistinguishable: any endpoint that tells an anonymous
+    /// caller whether a given address has an account is a way to test a list of
+    /// addresses against this service, which is the first step of a credential
+    /// stuffing run and is worth something to a phisher on its own.
+    /// </remarks>
     [HttpPost("register")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register(
         RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await auth.RegisterAsync(request, cancellationToken);
 
-        if (result.Succeeded)
+        return result.Outcome switch
         {
-            return StatusCode(StatusCodes.Status201Created);
-        }
-
-        if (result.Errors.Any(e => e.Code is "DuplicateUserName" or "DuplicateEmail"))
-        {
-            return Conflict(new ProblemDetails
-            {
-                Title = "That email address is already registered.",
-                Status = StatusCodes.Status409Conflict,
-            });
-        }
-
-        return BadRequest(result.ToValidationProblem());
+            // A malformed request is safe to report precisely - it says nothing
+            // about who does or does not have an account here.
+            RegistrationOutcome.Rejected => BadRequest(result.Failure!.ToValidationProblem()),
+            _ => Accepted(),
+        };
     }
 }
