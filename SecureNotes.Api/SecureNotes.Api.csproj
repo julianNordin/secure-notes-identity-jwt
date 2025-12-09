@@ -13,6 +13,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- FluentValidation.AspNetCore, which wired validation into the MVC pipeline
+         automatically, is deprecated and no longer maintained. The supported route is
+         the core package plus the DI extensions, with validation invoked explicitly -
+         here by one action filter in Common/ValidationFilter.cs. -->
+    <PackageReference Include="FluentValidation" Version="11.12.0" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.12.0" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.1" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <!-- PrivateAssets=all: this is the design-time package that `dotnet ef migrations`
