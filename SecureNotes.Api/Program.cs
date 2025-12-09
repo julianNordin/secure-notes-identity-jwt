@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.Domain;
+using SecureNotes.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -55,6 +56,13 @@ builder.Services
 // validation at startup. Nothing needs those providers until email confirmation
 // and password reset in Phase 12, and data protection key persistence is a
 // decision that belongs in that phase rather than smuggled in here.
+
+// Injected rather than reached for statically, so Phases 10, 15 and 16 can put a
+// FakeTimeProvider in its place and test lockout windows and token expiry without
+// a test suite that sleeps.
+builder.Services.AddSingleton(TimeProvider.System);
+
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
