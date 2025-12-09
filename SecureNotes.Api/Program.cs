@@ -1,5 +1,7 @@
+using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SecureNotes.Api.Common;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.Domain;
 
@@ -54,7 +56,11 @@ builder.Services
 // and password reset in Phase 12, and data protection key persistence is a
 // decision that belongs in that phase rather than smuggled in here.
 
-builder.Services.AddControllers();
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+
+// One globally registered filter is the entire validation mechanism, so when a
+// request is not being validated there is exactly one place to look.
+builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());
 
 var app = builder.Build();
 
