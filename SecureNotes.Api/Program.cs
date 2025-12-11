@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.Domain;
@@ -15,6 +16,14 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
         "No connection string named 'Default' was found. Set ConnectionStrings:Default in " +
         "appsettings.Development.json, or ConnectionStrings__Default in the environment. " +
         "`docker compose up -d db` starts the database it expects.");
+
+// ValidateOnStart turns a silent security failure into a startup crash. Without
+// it a deployment that forgot Jwt__SigningKey boots happily, signs every token
+// with an empty string, and looks fine until someone mints their own admin token.
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<JwtOptions>, JwtOptionsValidator>();
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 

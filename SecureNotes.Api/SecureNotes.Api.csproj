@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -10,6 +10,7 @@
          generation on turns that warning on for every public type in the project,
          which is noise: the comments that matter are on the endpoints. -->
     <NoWarn>$(NoWarn);1591</NoWarn>
+    <UserSecretsId>17d75c9f-8b05-457c-8a7c-c99e732915f5</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
