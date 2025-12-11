@@ -1,7 +1,11 @@
+using System.Text;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.Domain;
@@ -72,6 +76,62 @@ builder.Services
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
+
+// Configured through IOptions<JwtOptions> rather than reading configuration
+// directly, so the validator above has already run by the time the signing key is
+// used here. Reading the raw config would build a zero-length key on a
+// misconfigured deployment and throw something unhelpful before the validator got
+// its chance to say what was actually wrong.
+builder.Services
+    .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptions<JwtOptions>>((bearer, jwtOptions) =>
+    {
+        var jwt = jwtOptions.Value;
+
+        // Off. Left at its default of true, the handler rewrites `sub` to
+        // http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier, and
+        // User.FindFirst("sub") returns null with no error anywhere - which takes an
+        // afternoon to find, because the token visibly contains the claim.
+        bearer.MapInboundClaims = false;
+
+        // Every flag is written out even where it matches the default. These are the
+        // security properties of the whole API; inheriting them silently means nobody
+        // can review them, and a future package update could change one.
+        bearer.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+
+            ValidateLifetime = true,
+
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+
+            // An explicit allow-list of one. This is what makes algorithm confusion
+            // and `"alg":"none"` unreachable rather than merely unlikely: a token
+            // whose header names anything else is rejected before its signature is
+            // even considered.
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+
+            // The default is five minutes, which means an "expired" token keeps
+            // working for another five. That default exists for clock drift between
+            // separate machines, and this process both signs and validates.
+            ClockSkew = TimeSpan.Zero,
+
+            NameClaimType = JwtRegisteredClaimNames.Sub,
+            RoleClaimType = TokenService.RoleClaim,
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
@@ -80,6 +140,13 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());
 
 var app = builder.Build();
+
+// Order is the feature. UseAuthentication turns the Authorization header into a
+// ClaimsPrincipal; UseAuthorization decides what that principal may do. Reversed,
+// or with the first one missing, authorization runs against an anonymous principal
+// and every [Authorize] endpoint answers 401 no matter how good the token is.
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

@@ -16,13 +16,61 @@ public sealed record RegistrationResult(RegistrationOutcome Outcome, IdentityRes
 public interface IAuthService
 {
     Task<RegistrationResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Returns null for every kind of failed login, on purpose.</summary>
+    Task<TokenResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService(
     UserManager<AppUser> users,
+    SignInManager<AppUser> signIn,
+    ITokenService tokens,
     TimeProvider clock,
     ILogger<AuthService> logger) : IAuthService
 {
+    public async Task<TokenResponse?> LoginAsync(
+        LoginRequest request, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByEmailAsync(request.Email);
+
+        if (user is null)
+        {
+            // Same trick as registration: burn the hashing work a real login would
+            // spend, so that response time does not reveal whether the address
+            // exists. Returning early here would undo the uniform 401 below.
+            users.PasswordHasher.HashPassword(new AppUser { UserName = request.Email }, request.Password);
+            logger.LogInformation("Login attempted for an address with no account.");
+            return null;
+        }
+
+        // CheckPasswordSignInAsync rather than UserManager.CheckPasswordAsync,
+        // purely for lockoutOnFailure. UserManager's version verifies the password
+        // and does not touch AccessFailedCount, so an API built on it has a lockout
+        // policy configured and no lockout. It also does not issue a cookie, which
+        // is what makes it the right one for a bearer-token API.
+        var result = await signIn.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+
+        if (!result.Succeeded)
+        {
+            // Locked out, wrong password and not-allowed all leave by this door.
+            // A distinct "your account is locked" response would confirm the
+            // address has an account here, which is the thing the uniform answer
+            // exists to hide. The real owner finds out by email in Phase 12.
+            logger.LogInformation(
+                "Failed login for {UserId}. LockedOut={LockedOut} NotAllowed={NotAllowed}",
+                user.Id, result.IsLockedOut, result.IsNotAllowed);
+            return null;
+        }
+
+        var roles = (await users.GetRolesAsync(user)).ToArray();
+        var token = tokens.CreateAccessToken(user, roles);
+
+        return new TokenResponse(
+            token.Value,
+            "Bearer",
+            (int)Math.Round((token.ExpiresAt - clock.GetUtcNow()).TotalSeconds));
+    }
+
     public async Task<RegistrationResult> RegisterAsync(
         RegisterRequest request, CancellationToken cancellationToken)
     {
