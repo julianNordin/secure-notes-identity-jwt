@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.OpenApi;
 using Microsoft.IdentityModel.Tokens;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.Data;
@@ -133,6 +134,45 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(swagger =>
+{
+    swagger.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "SecureNotes",
+        Version = "v1",
+        Description =
+            "A personal notes API where authentication is the feature. /api/auth/login is the " +
+            "OAuth2 password grant and /api/auth/refresh the refresh_token grant.",
+    });
+
+    // The XML the csproj is already generating. Without this the endpoint summaries
+    // written on the controllers exist only in the source.
+    swagger.IncludeXmlComments(Path.Combine(
+        AppContext.BaseDirectory,
+        $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml"));
+
+    // Type=Http with Scheme=bearer, not ApiKey-in-header. The difference is real:
+    // this way the UI adds "Bearer " itself, so pasting a raw token works instead
+    // of silently producing an unparseable header.
+    swagger.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste the access_token from POST /api/auth/login. No \"Bearer\" prefix.",
+    });
+
+    // Microsoft.OpenApi 2.x, which Swashbuckle 10 depends on, replaced the old
+    // "an OpenApiSecurityScheme carrying a Reference" shape with a dedicated
+    // reference type. The 3.x recipe every tutorial still shows does not compile.
+    swagger.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = [],
+    });
+});
+
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 // One globally registered filter is the entire validation mechanism, so when a
@@ -140,6 +180,12 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // Order is the feature. UseAuthentication turns the Authorization header into a
 // ClaimsPrincipal; UseAuthorization decides what that principal may do. Reversed,
