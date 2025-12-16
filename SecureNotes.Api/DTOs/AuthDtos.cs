@@ -18,6 +18,11 @@ public record LoginRequest(string Email, string Password);
 public record TokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
     [property: JsonPropertyName("token_type")] string TokenType,
-    [property: JsonPropertyName("expires_in")] int ExpiresIn);
+    [property: JsonPropertyName("expires_in")] int ExpiresIn,
+    [property: JsonPropertyName("refresh_token")] string RefreshToken);
+
+/// <summary>The OAuth2 <c>refresh_token</c> grant, RFC 6749 section 6.</summary>
+public record RefreshRequest(
+    [property: JsonPropertyName("refresh_token")] string RefreshToken);
 
 public record MeResponse(Guid Id, string Email, string? DisplayName, IReadOnlyCollection<string> Roles);

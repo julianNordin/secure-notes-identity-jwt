@@ -30,4 +30,11 @@ public sealed class JwtOptions
     /// refresh tokens are what make a short window tolerable to use.
     /// </summary>
     public int AccessTokenMinutes { get; init; } = 15;
+
+    /// <summary>
+    /// How long a refresh token stays usable. Long, because it is what spares the
+    /// user a login every fifteen minutes - and affordable, because unlike an
+    /// access token this one can be revoked the moment anything looks wrong.
+    /// </summary>
+    public int RefreshTokenDays { get; init; } = 14;
 }

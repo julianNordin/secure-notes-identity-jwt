@@ -61,6 +61,13 @@ public sealed class JwtOptionsValidator : IValidateOptions<JwtOptions>
                 "be revoked, so anything beyond an hour is a stolen-token window nobody can close.");
         }
 
+        if (options.RefreshTokenDays is < 1 or > 90)
+        {
+            failures.Add(
+                $"Jwt:RefreshTokenDays is {options.RefreshTokenDays}. Beyond ninety days a stolen " +
+                "token outlives any plausible chance of the theft being noticed.");
+        }
+
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);

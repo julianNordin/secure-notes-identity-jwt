@@ -54,7 +54,8 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
-        var token = await auth.LoginAsync(request, cancellationToken);
+        var token = await auth.LoginAsync(
+            request, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
 
         if (token is null)
         {
@@ -94,5 +95,51 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
 
         var roles = (await users.GetRolesAsync(user)).ToArray();
         return Ok(new MeResponse(user.Id, user.Email!, user.DisplayName, roles));
+    }
+
+    /// <summary>
+    /// Exchanges a refresh token for a new access token and a new refresh token.
+    /// </summary>
+    /// <remarks>
+    /// The OAuth2 <c>refresh_token</c> grant, RFC 6749 section 6, with rotation.
+    /// The presented token is spent by this call and will not work again, so a copy
+    /// captured in transit stops being useful the moment the real client refreshes.
+    /// </remarks>
+    [HttpPost("refresh")]
+    [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Refresh(RefreshRequest request, CancellationToken cancellationToken)
+    {
+        var token = await auth.RefreshAsync(
+            request.RefreshToken, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+
+        if (token is null)
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Title = "Invalid refresh token.",
+                Status = StatusCodes.Status401Unauthorized,
+            });
+        }
+
+        return Ok(token);
+    }
+
+    /// <summary>
+    /// Revokes the presented refresh token.
+    /// </summary>
+    /// <remarks>
+    /// Always 204, whether or not the token was real. Reporting the difference
+    /// would turn logout into a way to test tokens, and no honest caller can do
+    /// anything with the answer. The access token already issued is untouched and
+    /// stays valid until it expires - Phase 08 adds the mechanism that fixes that.
+    /// </remarks>
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Logout(RefreshRequest request, CancellationToken cancellationToken)
+    {
+        await auth.LogoutAsync(request.RefreshToken, cancellationToken);
+
+        return NoContent();
     }
 }

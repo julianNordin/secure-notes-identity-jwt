@@ -18,59 +18,23 @@ public interface IAuthService
     Task<RegistrationResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken);
 
     /// <summary>Returns null for every kind of failed login, on purpose.</summary>
-    Task<TokenResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken);
+    Task<TokenResponse?> LoginAsync(LoginRequest request, string? ip, CancellationToken cancellationToken);
+
+    /// <summary>Rotates a refresh token. Null if it is unknown, expired or already spent.</summary>
+    Task<TokenResponse?> RefreshAsync(string presented, string? ip, CancellationToken cancellationToken);
+
+    /// <summary>Revokes the presented refresh token. Idempotent and always silent.</summary>
+    Task LogoutAsync(string presented, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService(
     UserManager<AppUser> users,
     SignInManager<AppUser> signIn,
     ITokenService tokens,
+    IRefreshTokenService refreshTokens,
     TimeProvider clock,
     ILogger<AuthService> logger) : IAuthService
 {
-    public async Task<TokenResponse?> LoginAsync(
-        LoginRequest request, CancellationToken cancellationToken)
-    {
-        var user = await users.FindByEmailAsync(request.Email);
-
-        if (user is null)
-        {
-            // Same trick as registration: burn the hashing work a real login would
-            // spend, so that response time does not reveal whether the address
-            // exists. Returning early here would undo the uniform 401 below.
-            users.PasswordHasher.HashPassword(new AppUser { UserName = request.Email }, request.Password);
-            logger.LogInformation("Login attempted for an address with no account.");
-            return null;
-        }
-
-        // CheckPasswordSignInAsync rather than UserManager.CheckPasswordAsync,
-        // purely for lockoutOnFailure. UserManager's version verifies the password
-        // and does not touch AccessFailedCount, so an API built on it has a lockout
-        // policy configured and no lockout. It also does not issue a cookie, which
-        // is what makes it the right one for a bearer-token API.
-        var result = await signIn.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
-
-        if (!result.Succeeded)
-        {
-            // Locked out, wrong password and not-allowed all leave by this door.
-            // A distinct "your account is locked" response would confirm the
-            // address has an account here, which is the thing the uniform answer
-            // exists to hide. The real owner finds out by email in Phase 12.
-            logger.LogInformation(
-                "Failed login for {UserId}. LockedOut={LockedOut} NotAllowed={NotAllowed}",
-                user.Id, result.IsLockedOut, result.IsNotAllowed);
-            return null;
-        }
-
-        var roles = (await users.GetRolesAsync(user)).ToArray();
-        var token = tokens.CreateAccessToken(user, roles);
-
-        return new TokenResponse(
-            token.Value,
-            "Bearer",
-            (int)Math.Round((token.ExpiresAt - clock.GetUtcNow()).TotalSeconds));
-    }
-
     public async Task<RegistrationResult> RegisterAsync(
         RegisterRequest request, CancellationToken cancellationToken)
     {
@@ -123,5 +87,93 @@ public sealed class AuthService(
         }
 
         return new RegistrationResult(RegistrationOutcome.Rejected, result);
+    }
+
+    public async Task<TokenResponse?> LoginAsync(
+        LoginRequest request, string? ip, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByEmailAsync(request.Email);
+
+        if (user is null)
+        {
+            // Same trick as registration: burn the hashing work a real login would
+            // spend, so response time does not reveal whether the address exists.
+            users.PasswordHasher.HashPassword(new AppUser { UserName = request.Email }, request.Password);
+            logger.LogInformation("Login attempted for an address with no account.");
+            return null;
+        }
+
+        var result = await signIn.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+
+        if (!result.Succeeded)
+        {
+            // Locked out, wrong password and not-allowed all leave by this door.
+            // A distinct "your account is locked" response would confirm the address
+            // has an account here, which is what the uniform answer exists to hide.
+            logger.LogInformation(
+                "Failed login for {UserId}. LockedOut={LockedOut} NotAllowed={NotAllowed}",
+                user.Id, result.IsLockedOut, result.IsNotAllowed);
+            return null;
+        }
+
+        // A fresh login starts a new family. Nothing links this session to a previous
+        // one, so revoking an old session cannot touch this one.
+        var refresh = await refreshTokens.IssueAsync(user, familyId: null, ip, cancellationToken);
+
+        return await BuildResponseAsync(user, refresh);
+    }
+
+    public async Task<TokenResponse?> RefreshAsync(
+        string presented, string? ip, CancellationToken cancellationToken)
+    {
+        var stored = await refreshTokens.FindAsync(presented, cancellationToken);
+
+        if (stored?.User is null)
+        {
+            logger.LogInformation("Refresh presented a token that is not in the store.");
+            return null;
+        }
+
+        if (!stored.IsActive(clock.GetUtcNow()))
+        {
+            // Expired, or already spent. Phase 08 makes the already-spent case mean
+            // something far stronger than a plain refusal.
+            logger.LogInformation(
+                "Refresh presented an inactive token for {UserId} in family {FamilyId}.",
+                stored.UserId, stored.FamilyId);
+            return null;
+        }
+
+        // Rotation. The presented token is spent the moment it is accepted and its
+        // replacement is issued into the same family, so one token is usable exactly
+        // once and a copy taken in transit dies as soon as the real client refreshes.
+        var replacement = await refreshTokens.IssueAsync(stored.User, stored.FamilyId, ip, cancellationToken);
+        await refreshTokens.RevokeAsync(stored, replacement, cancellationToken);
+
+        return await BuildResponseAsync(stored.User, replacement);
+    }
+
+    public async Task LogoutAsync(string presented, CancellationToken cancellationToken)
+    {
+        var stored = await refreshTokens.FindAsync(presented, cancellationToken);
+
+        // Silent either way. A logout that reported whether the token was real would
+        // be a way to test tokens, and no caller can do anything with the answer.
+        if (stored is not null && stored.IsActive(clock.GetUtcNow()))
+        {
+            await refreshTokens.RevokeAsync(stored, replacedBy: null, cancellationToken);
+        }
+    }
+
+    private async Task<TokenResponse> BuildResponseAsync(AppUser user, string refreshToken)
+    {
+        var roles = (await users.GetRolesAsync(user)).ToArray();
+        var access = tokens.CreateAccessToken(user, roles);
+
+        return new TokenResponse(
+            access.Value,
+            "Bearer",
+            (int)Math.Round((access.ExpiresAt - clock.GetUtcNow()).TotalSeconds),
+            refreshToken);
     }
 }
