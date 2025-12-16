@@ -16,6 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     public DbSet<Note> Notes => Set<Note>();
 
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         // This call has to come first. IdentityDbContext maps its seven tables
@@ -42,6 +44,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             note.HasOne<AppUser>()
                 .WithMany(u => u.Notes)
                 .HasForeignKey(n => n.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RefreshToken>(token =>
+        {
+            token.Property(t => t.Token).HasMaxLength(128);
+            token.Property(t => t.ReplacedByToken).HasMaxLength(128);
+            token.Property(t => t.CreatedByIp).HasMaxLength(45);
+
+            // Unique, because every refresh is a lookup by this column and two rows
+            // sharing a value would make "which token is this" ambiguous at exactly
+            // the moment it matters.
+            token.HasIndex(t => t.Token).IsUnique();
+
+            // Phase 08 revokes an entire family in one statement when a rotated
+            // token is replayed, and that statement filters on this column.
+            token.HasIndex(t => t.FamilyId);
+
+            token.HasOne(t => t.User)
+                .WithMany()
+                .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
