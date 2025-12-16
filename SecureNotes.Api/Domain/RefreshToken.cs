@@ -13,7 +13,12 @@ public class RefreshToken
 
     public Guid UserId { get; set; }
 
-    public required string Token { get; set; }
+    /// <summary>
+    /// SHA-256 of the token that was handed to the client. The token itself is
+    /// never stored: it exists in this process for the length of one response and
+    /// then only in the client's hands.
+    /// </summary>
+    public required string TokenHash { get; set; }
 
     /// <summary>
     /// Every token descended from one login shares a family id. Rotation issues a
@@ -29,8 +34,8 @@ public class RefreshToken
     /// <summary>Null while the token is live. Set on rotation, logout or revocation.</summary>
     public DateTimeOffset? RevokedAt { get; set; }
 
-    /// <summary>The token issued in this one's place, so the chain can be walked.</summary>
-    public string? ReplacedByToken { get; set; }
+    /// <summary>Hash of the token issued in this one's place, so the chain can be walked.</summary>
+    public string? ReplacedByTokenHash { get; set; }
 
     /// <summary>Recorded for the audit trail, never for authorization decisions.</summary>
     public string? CreatedByIp { get; set; }

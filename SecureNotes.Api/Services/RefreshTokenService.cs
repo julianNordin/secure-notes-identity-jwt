@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SecureNotes.Api.Common;
@@ -46,7 +47,7 @@ public sealed class RefreshTokenService(
         {
             Id = Guid.CreateVersion7(),
             UserId = user.Id,
-            Token = raw,
+            TokenHash = Hash(raw),
             FamilyId = familyId ?? Guid.CreateVersion7(),
             CreatedAt = now,
             ExpiresAt = now.AddDays(_options.RefreshTokenDays),
@@ -58,18 +59,36 @@ public sealed class RefreshTokenService(
         return raw;
     }
 
-    public Task<RefreshToken?> FindAsync(string presented, CancellationToken cancellationToken) =>
-        db.RefreshTokens
+    public Task<RefreshToken?> FindAsync(string presented, CancellationToken cancellationToken)
+    {
+        // Look up by hash. Nothing needs a constant-time comparison here and adding
+        // one would be theatre: the match is an index lookup on a 256-bit value, so
+        // there is no secret to leak a byte at a time and no near-miss to learn from.
+        var hash = Hash(presented);
+
+        return db.RefreshTokens
             .Include(t => t.User)
-            .FirstOrDefaultAsync(t => t.Token == presented, cancellationToken);
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, cancellationToken);
+    }
 
     public async Task RevokeAsync(RefreshToken token, string? replacedBy, CancellationToken cancellationToken)
     {
         token.RevokedAt = clock.GetUtcNow();
-        token.ReplacedByToken = replacedBy;
+        token.ReplacedByTokenHash = replacedBy is null ? null : Hash(replacedBy);
 
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// A single SHA-256, not a password hash.
+    /// </summary>
+    /// <remarks>
+    /// PBKDF2 is slow on purpose because a password is low-entropy and guessable.
+    /// This token is 256 bits from a CSPRNG, so brute force is not on the table and
+    /// a slow hash would only mean burning 100ms of server time on every refresh.
+    /// </remarks>
+    private static string Hash(string raw) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
 
     // Base64 with the URL-unsafe characters swapped and the padding dropped, so the
     // token survives a cookie, a query string and a JSON body unchanged.

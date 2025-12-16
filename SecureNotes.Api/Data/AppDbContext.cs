@@ -49,14 +49,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         builder.Entity<RefreshToken>(token =>
         {
-            token.Property(t => t.Token).HasMaxLength(128);
-            token.Property(t => t.ReplacedByToken).HasMaxLength(128);
+            token.Property(t => t.TokenHash).HasMaxLength(64);
+            token.Property(t => t.ReplacedByTokenHash).HasMaxLength(64);
             token.Property(t => t.CreatedByIp).HasMaxLength(45);
 
             // Unique, because every refresh is a lookup by this column and two rows
             // sharing a value would make "which token is this" ambiguous at exactly
             // the moment it matters.
-            token.HasIndex(t => t.Token).IsUnique();
+            token.HasIndex(t => t.TokenHash).IsUnique();
 
             // Phase 08 revokes an entire family in one statement when a rotated
             // token is replayed, and that statement filters on this column.
