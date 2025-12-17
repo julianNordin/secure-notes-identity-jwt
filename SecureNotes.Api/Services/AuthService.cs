@@ -25,6 +25,9 @@ public interface IAuthService
 
     /// <summary>Revokes the presented refresh token. Idempotent and always silent.</summary>
     Task LogoutAsync(string presented, CancellationToken cancellationToken);
+
+    /// <summary>Ends every session the user has anywhere, including live access tokens.</summary>
+    Task LogoutEverywhereAsync(Guid userId, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService(
@@ -180,6 +183,28 @@ public sealed class AuthService(
         {
             await refreshTokens.RevokeAsync(stored, replacedBy: null, cancellationToken);
         }
+    }
+
+    public async Task LogoutEverywhereAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+
+        if (user is null)
+        {
+            return;
+        }
+
+        // Both halves are needed and neither is enough alone. Revoking the refresh
+        // tokens stops new access tokens being minted; rolling the security stamp
+        // kills the access tokens already out there, which would otherwise keep
+        // working until they expired. Without the second, "log out everywhere"
+        // would mean "log out everywhere in up to fifteen minutes".
+        var killed = await refreshTokens.RevokeAllForUserAsync(userId, cancellationToken);
+        await users.UpdateSecurityStampAsync(user);
+
+        logger.LogInformation(
+            "Logged {UserId} out everywhere: {Killed} refresh token(s) revoked, security stamp rolled.",
+            userId, killed);
     }
 
     private async Task<TokenResponse> BuildResponseAsync(AppUser user, string refreshToken)

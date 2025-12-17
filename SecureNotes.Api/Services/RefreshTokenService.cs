@@ -41,6 +41,16 @@ public sealed class RefreshTokenService(
     /// </remarks>
     public const int TokenBytes = 32;
 
+    /// <summary>
+    /// How long a dead token is kept before it is swept.
+    /// </summary>
+    /// <remarks>
+    /// Not zero, because reuse detection needs the revoked row to still be there -
+    /// deleting a spent token immediately would turn a replay into "unknown token"
+    /// and lose the one signal worth having.
+    /// </remarks>
+    public static readonly TimeSpan DeadTokenRetention = TimeSpan.FromDays(30);
+
     private readonly JwtOptions _options = options.Value;
 
     public async Task<string> IssueAsync(
@@ -61,6 +71,15 @@ public sealed class RefreshTokenService(
         });
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // Sweep this user's long-dead rows, here rather than in a background
+        // service. Cleanup happens where the growth happens, the work is bounded to
+        // one user and one index, and there is no hosted service lifetime to reason
+        // about or to disable when the integration tests spin up a host.
+        var cutoff = now - DeadTokenRetention;
+        await db.RefreshTokens
+            .Where(t => t.UserId == user.Id && t.ExpiresAt < cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
 
         return raw;
     }

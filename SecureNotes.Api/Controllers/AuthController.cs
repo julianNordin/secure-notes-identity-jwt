@@ -142,4 +142,26 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Ends every session this account has, on every device.
+    /// </summary>
+    /// <remarks>
+    /// Revokes all of the user's refresh tokens and rolls their security stamp.
+    /// The second part is what makes it immediate: without it, access tokens
+    /// already issued would keep working until they expired, and "log out
+    /// everywhere" would quietly mean "log out everywhere within fifteen minutes".
+    /// The token used to make this call is invalidated too, which is correct -
+    /// everywhere includes here.
+    /// </remarks>
+    [HttpPost("logout-all")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> LogoutEverywhere(CancellationToken cancellationToken)
+    {
+        await auth.LogoutEverywhereAsync(User.GetUserId(), cancellationToken);
+
+        return NoContent();
+    }
 }
