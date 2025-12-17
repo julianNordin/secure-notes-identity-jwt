@@ -134,13 +134,30 @@ public sealed class AuthService(
             return null;
         }
 
+        if (stored.RevokedAt is not null)
+        {
+            // This token was already spent. Rotation means the legitimate client no
+            // longer has it, so two parties held the same token and one of them is
+            // not the user. There is no way to tell which of them is presenting it
+            // now, so the only safe move is to end the session for both: revoke
+            // every live token descended from that login and make them authenticate
+            // again with something this attacker does not have.
+            var killed = await refreshTokens.RevokeFamilyAsync(stored.FamilyId, cancellationToken);
+
+            logger.LogWarning(
+                "Refresh token reuse detected for {UserId}. Family {FamilyId} revoked, " +
+                "{Killed} live token(s) killed. A spent token was presented, which means it " +
+                "was held by more than one party.",
+                stored.UserId, stored.FamilyId, killed);
+
+            return null;
+        }
+
         if (!stored.IsActive(clock.GetUtcNow()))
         {
-            // Expired, or already spent. Phase 08 makes the already-spent case mean
-            // something far stronger than a plain refusal.
+            // Simply expired. Nothing suspicious: the user was away too long.
             logger.LogInformation(
-                "Refresh presented an inactive token for {UserId} in family {FamilyId}.",
-                stored.UserId, stored.FamilyId);
+                "Refresh presented an expired token for {UserId}.", stored.UserId);
             return null;
         }
 

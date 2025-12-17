@@ -17,6 +17,12 @@ public interface IRefreshTokenService
     Task<RefreshToken?> FindAsync(string presented, CancellationToken cancellationToken);
 
     Task RevokeAsync(RefreshToken token, string? replacedBy, CancellationToken cancellationToken);
+
+    /// <summary>Revokes every live token in a family. Returns how many were killed.</summary>
+    Task<int> RevokeFamilyAsync(Guid familyId, CancellationToken cancellationToken);
+
+    /// <summary>Revokes every live token belonging to one user.</summary>
+    Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken);
 }
 
 public sealed class RefreshTokenService(
@@ -89,6 +95,16 @@ public sealed class RefreshTokenService(
     /// </remarks>
     private static string Hash(string raw) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+
+    public Task<int> RevokeFamilyAsync(Guid familyId, CancellationToken cancellationToken) =>
+        db.RefreshTokens
+            .Where(t => t.FamilyId == familyId && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, clock.GetUtcNow()), cancellationToken);
+
+    public Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken) =>
+        db.RefreshTokens
+            .Where(t => t.UserId == userId && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, clock.GetUtcNow()), cancellationToken);
 
     // Base64 with the URL-unsafe characters swapped and the padding dropped, so the
     // token survives a cookie, a query string and a JSON body unchanged.
