@@ -102,6 +102,14 @@ builder.Services
         // afternoon to find, because the token visibly contains the claim.
         bearer.MapInboundClaims = false;
 
+        // Signature and expiry are not enough on their own. A JWT cannot be
+        // recalled, so this checks the account's security stamp on every request
+        // and rejects tokens issued before a password change or a logout-all.
+        bearer.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = SecurityStampCheck.ValidateAsync,
+        };
+
         // Every flag is written out even where it matches the default. These are the
         // security properties of the whole API; inheriting them silently means nobody
         // can review them, and a future package update could change one.
