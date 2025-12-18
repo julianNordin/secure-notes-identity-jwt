@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using SecureNotes.Api.Common;
 using SecureNotes.Api.Domain;
 using SecureNotes.Api.DTOs;
 
@@ -78,6 +79,12 @@ public sealed class AuthService(
 
         if (result.Succeeded)
         {
+            // Every account gets the User role. Roles are additive here, so the
+            // absence of a role would be indistinguishable from a role that failed
+            // to apply, and a policy asking "is this caller a User" would answer no
+            // for everyone. Admin is only ever granted deliberately.
+            await users.AddToRoleAsync(user, Roles.User);
+
             return new RegistrationResult(RegistrationOutcome.Created);
         }
 

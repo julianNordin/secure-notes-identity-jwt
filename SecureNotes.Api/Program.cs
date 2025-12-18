@@ -191,6 +191,8 @@ builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>
 
 var app = builder.Build();
 
+await DbInitializer.SeedAsync(app.Services);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
