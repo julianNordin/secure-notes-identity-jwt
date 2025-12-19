@@ -10,6 +10,14 @@ namespace SecureNotes.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+/// <remarks>
+/// The fallback policy makes every endpoint require an authenticated caller, so the
+/// four endpoints below have to opt out explicitly. Three of them could not work any
+/// other way - you cannot log in if logging in requires being logged in - and logout
+/// is anonymous because the refresh token it revokes is itself the credential, and
+/// demanding a live access token as well would mean an expired session could never
+/// be cleaned up.
+/// </remarks>
 public sealed class AuthController(IAuthService auth, UserManager<AppUser> users) : ControllerBase
 {
     /// <summary>
@@ -23,6 +31,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     /// stuffing run and is worth something to a phisher on its own.
     /// </remarks>
     [HttpPost("register")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register(
@@ -50,6 +59,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     /// addresses into "has an account here" and "does not".
     /// </remarks>
     [HttpPost("login")]
+    [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
@@ -106,6 +116,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     /// captured in transit stops being useful the moment the real client refreshes.
     /// </remarks>
     [HttpPost("refresh")]
+    [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh(RefreshRequest request, CancellationToken cancellationToken)
@@ -135,6 +146,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     /// stays valid until it expires - Phase 08 adds the mechanism that fixes that.
     /// </remarks>
     [HttpPost("logout")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Logout(RefreshRequest request, CancellationToken cancellationToken)
     {
