@@ -26,6 +26,12 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider cloc
     /// </summary>
     public const string RoleClaim = "role";
 
+    /// <summary>Whether the address on file has been confirmed. Read by the CanWriteNotes policy.</summary>
+    public const string EmailVerifiedClaim = "email_verified";
+
+    /// <summary>Account creation time, unix seconds. Read by the CanWriteNotes policy.</summary>
+    public const string CreatedAtClaim = "created_at";
+
     private readonly JwtOptions _options = options.Value;
 
     public AccessToken CreateAccessToken(AppUser user, IReadOnlyCollection<string> roles)
@@ -53,6 +59,14 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider cloc
             [SecurityStampClaim] = user.SecurityStamp ?? string.Empty,
 
             [RoleClaim] = roles.ToArray(),
+
+            // Both of these are inputs to an authorization policy, so they ride in
+            // the token rather than being looked up per request. They can only go
+            // stale for as long as an access token lives, which is fifteen minutes,
+            // and confirming an address is not urgent enough to pay a database read
+            // on every request the way the security stamp does.
+            [EmailVerifiedClaim] = user.EmailConfirmed ? "true" : "false",
+            [CreatedAtClaim] = user.CreatedAt.ToUnixTimeSeconds().ToString(),
         };
 
         var descriptor = new SecurityTokenDescriptor

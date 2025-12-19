@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SecureNotes.Api.Common;
+using SecureNotes.Api.Common.Authorization;
 using SecureNotes.Api.DTOs;
 using SecureNotes.Api.Services;
 
@@ -57,7 +58,9 @@ public sealed class NotesController(INoteService notes) : ControllerBase
     /// Creates a note owned by the caller.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = Policies.CanWriteNotes)]
     [ProducesResponseType<NoteResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Create(CreateNoteRequest request, CancellationToken cancellationToken)
     {
         var note = await notes.CreateAsync(User.GetUserId(), request, cancellationToken);
@@ -69,7 +72,9 @@ public sealed class NotesController(INoteService notes) : ControllerBase
     /// Replaces the title and content of one of the caller's notes.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = Policies.CanWriteNotes)]
     [ProducesResponseType<NoteResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid id, UpdateNoteRequest request, CancellationToken cancellationToken)

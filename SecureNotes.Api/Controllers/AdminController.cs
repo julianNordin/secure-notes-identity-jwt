@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SecureNotes.Api.Common;
+using SecureNotes.Api.Common.Authorization;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.DTOs;
 using SecureNotes.Api.Services;
@@ -17,7 +17,7 @@ namespace SecureNotes.Api.Controllers;
 /// somebody remembered an attribute.
 /// </remarks>
 [ApiController]
-[Authorize(Roles = Roles.Admin)]
+[Authorize(Policy = Policies.RequireAdmin)]
 [Route("api/admin")]
 public sealed class AdminController(AppDbContext db, TimeProvider clock) : ControllerBase
 {

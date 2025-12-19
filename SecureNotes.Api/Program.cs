@@ -1,6 +1,7 @@
 using System.Text;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.OpenApi;
 using Microsoft.IdentityModel.Tokens;
 using SecureNotes.Api.Common;
+using SecureNotes.Api.Common.Authorization;
 using SecureNotes.Api.Data;
 using SecureNotes.Api.Domain;
 using SecureNotes.Api.Services;
@@ -142,7 +144,20 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddSingleton<IAuthorizationHandler, EmailConfirmationHandler>();
+
+builder.Services
+    .AddAuthorizationBuilder()
+
+    // The same rule as [Authorize(Roles = "Admin")], written the other way round so
+    // the two forms can be compared. A role is a claim with an attribute that knows
+    // its name; the moment a rule says anything other than "is a member of", the
+    // attribute has run out of road and a policy has not.
+    .AddPolicy(Policies.RequireAdmin, policy => policy.RequireRole(Roles.Admin))
+
+    .AddPolicy(Policies.CanWriteNotes, policy =>
+        policy.AddRequirements(new EmailConfirmationRequirement(Policies.ConfirmationGrace)))
+;
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(swagger =>
