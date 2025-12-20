@@ -145,6 +145,7 @@ builder.Services
     });
 
 builder.Services.AddSingleton<IAuthorizationHandler, EmailConfirmationHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, NoteAuthorizationHandler>();
 
 builder.Services
     .AddAuthorizationBuilder()
