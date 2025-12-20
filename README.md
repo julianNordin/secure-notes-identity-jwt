@@ -9,7 +9,7 @@ admins see all of them, and the notes themselves are deliberately boring so that
 part — ASP.NET Core Identity, JWT access tokens, rotating refresh tokens with reuse detection, and
 three distinct styles of authorization — is what a reader's attention lands on.
 
-**Status:** 🚧 In progress — Phase 10 of 18 complete. See [Roadmap](#roadmap) below.
+**Status:** 🚧 In progress — Phase 11 of 18 complete. See [Roadmap](#roadmap) below.
 
 ## Why this project
 
@@ -50,7 +50,7 @@ dotnet run --project SecureNotes.Api      # http://localhost:5080
 - [x] **08** · Reuse detection & security-stamp invalidation
 - [x] **09** · Role-based authorization
 - [x] **10** · Policy-based authorization & secure-by-default
-- [ ] **11** · Resource-based authorization
+- [x] **11** · Resource-based authorization
 - [ ] **12** · Account lifecycle: lockout, email confirmation, password reset
 - [ ] **13** · Hardening: rate limiting, ProblemDetails, headers, health
 - [ ] **14** · Integration test harness: WebApplicationFactory + Testcontainers
