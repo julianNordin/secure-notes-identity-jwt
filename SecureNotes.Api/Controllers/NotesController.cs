@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.Common.Authorization;
+using SecureNotes.Api.Domain;
 using SecureNotes.Api.DTOs;
 using SecureNotes.Api.Services;
 
@@ -10,7 +12,9 @@ namespace SecureNotes.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/notes")]
-public sealed class NotesController(INoteService notes) : ControllerBase
+public sealed class NotesController(
+    INoteService notes,
+    IAuthorizationService authorization) : ControllerBase
 {
     /// <summary>
     /// Lists the caller's own notes, newest first.
@@ -45,10 +49,14 @@ public sealed class NotesController(INoteService notes) : ControllerBase
     public async Task<IActionResult> Get(Guid id, CancellationToken cancellationToken)
     {
         var note = await notes.FindAsync(id, cancellationToken);
-
-        if (note is null || note.OwnerId != User.GetUserId())
+        if (note is null)
         {
             return NotFound();
+        }
+
+        if (await AuthorizeAsync(note, NoteOperations.Read) is { } refusal)
+        {
+            return refusal;
         }
 
         return Ok(note.ToResponse());
@@ -80,10 +88,14 @@ public sealed class NotesController(INoteService notes) : ControllerBase
         Guid id, UpdateNoteRequest request, CancellationToken cancellationToken)
     {
         var note = await notes.FindAsync(id, cancellationToken);
-
-        if (note is null || note.OwnerId != User.GetUserId())
+        if (note is null)
         {
             return NotFound();
+        }
+
+        if (await AuthorizeAsync(note, NoteOperations.Update) is { } refusal)
+        {
+            return refusal;
         }
 
         await notes.UpdateAsync(note, request, cancellationToken);
@@ -100,14 +112,45 @@ public sealed class NotesController(INoteService notes) : ControllerBase
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var note = await notes.FindAsync(id, cancellationToken);
-
-        if (note is null || note.OwnerId != User.GetUserId())
+        if (note is null)
         {
             return NotFound();
+        }
+
+        if (await AuthorizeAsync(note, NoteOperations.Delete) is { } refusal)
+        {
+            return refusal;
         }
 
         await notes.DeleteAsync(note, cancellationToken);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Returns the response to send instead, or null if the caller may proceed.
+    /// </summary>
+    /// <remarks>
+    /// Two checks, because the two refusals mean different things. A caller who may
+    /// not even read the note gets 404: for them the note's existence is itself the
+    /// secret, and 403 would confirm it. A caller who may read it but not perform
+    /// this operation gets 403, because they can already see the note - an admin
+    /// looking at it through GET can hardly be misled by being told plainly that
+    /// they may not edit it. Answering 404 there would be dishonest to no purpose.
+    /// </remarks>
+    private async Task<IActionResult?> AuthorizeAsync(
+        Note note, OperationAuthorizationRequirement operation)
+    {
+        if (!(await authorization.AuthorizeAsync(User, note, NoteOperations.Read)).Succeeded)
+        {
+            return NotFound();
+        }
+
+        if (!(await authorization.AuthorizeAsync(User, note, operation)).Succeeded)
+        {
+            return Forbid();
+        }
+
+        return null;
     }
 }
