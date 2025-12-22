@@ -64,14 +64,22 @@ builder.Services
     })
     .AddRoles<AppRole>()
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager();
+    .AddSignInManager()
 
-// AddDefaultTokenProviders() is deliberately NOT here. It registers
-// DataProtectorTokenProvider, which needs IDataProtectionProvider, which
-// AddIdentityCore does not bring with it - so registering it now fails DI
-// validation at startup. Nothing needs those providers until email confirmation
-// and password reset in Phase 12, and data protection key persistence is a
-// decision that belongs in that phase rather than smuggled in here.
+    // Deferred here from Phase 03, where it broke startup: DataProtectorTokenProvider
+    // needs IDataProtectionProvider, which AddIdentityCore does not register. The
+    // AddDataProtection call below is what makes this work, and it belongs in the
+    // phase that actually needs email confirmation and password reset tokens.
+    .AddDefaultTokenProviders();
+
+// Identity's confirmation and reset tokens are encrypted with these keys, so where
+// they live decides how long a token stays valid. The default on Windows is a
+// per-user folder, which survives a restart. In a container with no persistent
+// volume the keys are regenerated on every start, and every outstanding reset link
+// stops working - a bug that looks like "tokens randomly invalid" and is really
+// "the keyring was thrown away".
+builder.Services.AddDataProtection();
+
 
 // Injected rather than reached for statically, so Phases 10, 15 and 16 can put a
 // FakeTimeProvider in its place and test lockout windows and token expiry without
@@ -82,6 +90,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+builder.Services.AddScoped<IEmailSender, LoggingEmailSender>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
