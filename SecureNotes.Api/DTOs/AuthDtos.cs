@@ -26,3 +26,11 @@ public record RefreshRequest(
     [property: JsonPropertyName("refresh_token")] string RefreshToken);
 
 public record MeResponse(Guid Id, string Email, string? DisplayName, IReadOnlyCollection<string> Roles);
+
+public record ConfirmEmailRequest(Guid UserId, string Token);
+
+public record EmailOnlyRequest(string Email);
+
+public record ResetPasswordRequest(Guid UserId, string Token, string NewPassword);
+
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);

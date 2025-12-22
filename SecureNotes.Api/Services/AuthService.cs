@@ -29,12 +29,26 @@ public interface IAuthService
 
     /// <summary>Ends every session the user has anywhere, including live access tokens.</summary>
     Task LogoutEverywhereAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task SendConfirmationAsync(AppUser user, CancellationToken cancellationToken);
+
+    Task<bool> ConfirmEmailAsync(Guid userId, string encodedToken, CancellationToken cancellationToken);
+
+    /// <summary>Silent whether or not the address has an account.</summary>
+    Task SendPasswordResetAsync(string emailAddress, CancellationToken cancellationToken);
+
+    Task<IdentityResult> ResetPasswordAsync(
+        Guid userId, string encodedToken, string newPassword, CancellationToken cancellationToken);
+
+    Task<IdentityResult> ChangePasswordAsync(
+        Guid userId, string current, string replacement, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService(
     UserManager<AppUser> users,
     SignInManager<AppUser> signIn,
     ITokenService tokens,
+    IEmailSender email,
     IRefreshTokenService refreshTokens,
     TimeProvider clock,
     ILogger<AuthService> logger) : IAuthService
@@ -58,6 +72,13 @@ public sealed class AuthService(
             logger.LogInformation(
                 "Registration attempted for an address that already has an account: {UserId}",
                 existing.Id);
+
+            await email.SendAsync(
+                existing.Email!,
+                "Someone tried to register with your address",
+                "Your SecureNotes account already exists. If this was you, sign in or reset your " +
+                "password. If it was not, no action is needed - no account was created.",
+                cancellationToken);
 
             return new RegistrationResult(RegistrationOutcome.AlreadyRegistered);
         }
@@ -84,6 +105,7 @@ public sealed class AuthService(
             // to apply, and a policy asking "is this caller a User" would answer no
             // for everyone. Admin is only ever granted deliberately.
             await users.AddToRoleAsync(user, Roles.User);
+            await SendConfirmationAsync(user, cancellationToken);
 
             return new RegistrationResult(RegistrationOutcome.Created);
         }
@@ -224,5 +246,127 @@ public sealed class AuthService(
             "Bearer",
             (int)Math.Round((access.ExpiresAt - clock.GetUtcNow()).TotalSeconds),
             refreshToken);
+    }
+
+    public async Task SendConfirmationAsync(AppUser user, CancellationToken cancellationToken)
+    {
+        if (user.EmailConfirmed)
+        {
+            return;
+        }
+
+        var token = IdentityTokenCodec.Encode(await users.GenerateEmailConfirmationTokenAsync(user));
+
+        await email.SendAsync(
+            user.Email!,
+            "Confirm your SecureNotes address",
+            $"Confirm with userId={user.Id} and token={token}",
+            cancellationToken);
+    }
+
+    public async Task<bool> ConfirmEmailAsync(
+        Guid userId, string encodedToken, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+        var token = IdentityTokenCodec.Decode(encodedToken);
+
+        if (user is null || token is null)
+        {
+            return false;
+        }
+
+        var result = await users.ConfirmEmailAsync(user, token);
+
+        if (!result.Succeeded)
+        {
+            logger.LogInformation("Email confirmation failed for {UserId}.", userId);
+        }
+
+        return result.Succeeded;
+    }
+
+    public async Task SendPasswordResetAsync(string emailAddress, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByEmailAsync(emailAddress);
+
+        // No account, nothing sent, and the caller is told the same thing either
+        // way. This endpoint is anonymous, so any difference in its answer is a
+        // free directory of who banks here.
+        if (user is null)
+        {
+            logger.LogInformation("Password reset requested for an address with no account.");
+            return;
+        }
+
+        var token = IdentityTokenCodec.Encode(await users.GeneratePasswordResetTokenAsync(user));
+
+        await email.SendAsync(
+            user.Email!,
+            "Reset your SecureNotes password",
+            $"Reset with userId={user.Id} and token={token}. If this was not you, ignore it.",
+            cancellationToken);
+    }
+
+    public async Task<IdentityResult> ResetPasswordAsync(
+        Guid userId, string encodedToken, string newPassword, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+        var token = IdentityTokenCodec.Decode(encodedToken);
+
+        if (user is null || token is null)
+        {
+            // Deliberately the same failure a wrong token produces, so a bad user id
+            // cannot be used to find out which ids exist.
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "InvalidToken",
+                Description = "The reset link is invalid or has expired.",
+            });
+        }
+
+        var result = await users.ResetPasswordAsync(user, token, newPassword);
+
+        if (result.Succeeded)
+        {
+            // ResetPasswordAsync rolls the security stamp, which the Phase 08 check
+            // turns into an immediate logout everywhere. Revoke the refresh tokens
+            // too: whoever forced this reset must not keep a way back in.
+            await refreshTokens.RevokeAllForUserAsync(user.Id, cancellationToken);
+            logger.LogInformation("Password reset completed for {UserId}, all sessions ended.", user.Id);
+        }
+
+        return result;
+    }
+
+    public async Task<IdentityResult> ChangePasswordAsync(
+        Guid userId, string current, string replacement, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+
+        if (user is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "NotFound",
+                Description = "The account no longer exists.",
+            });
+        }
+
+        var result = await users.ChangePasswordAsync(user, current, replacement);
+
+        if (result.Succeeded)
+        {
+            await refreshTokens.RevokeAllForUserAsync(user.Id, cancellationToken);
+
+            await email.SendAsync(
+                user.Email!,
+                "Your SecureNotes password changed",
+                "If this was not you, reset your password immediately.",
+                cancellationToken);
+
+            logger.LogInformation("Password changed for {UserId}, all sessions ended.", user.Id);
+        }
+
+        return result;
     }
 }

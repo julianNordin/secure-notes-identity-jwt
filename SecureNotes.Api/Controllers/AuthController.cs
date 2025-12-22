@@ -176,4 +176,95 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
 
         return NoContent();
     }
+
+    /// <summary>Confirms an email address using the token from the confirmation email.</summary>
+    [HttpPost("confirm-email")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmEmail(
+        ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        var confirmed = await auth.ConfirmEmailAsync(request.UserId, request.Token, cancellationToken);
+
+        if (!confirmed)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "The confirmation link is invalid or has expired.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Sends the confirmation email again.</summary>
+    /// <remarks>Always 202, so it cannot be used to test whether an address is registered.</remarks>
+    [HttpPost("resend-confirmation")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ResendConfirmation(
+        EmailOnlyRequest request, CancellationToken cancellationToken)
+    {
+        var user = await users.FindByEmailAsync(request.Email);
+
+        if (user is not null)
+        {
+            await auth.SendConfirmationAsync(user, cancellationToken);
+        }
+
+        return Accepted();
+    }
+
+    /// <summary>Starts a password reset.</summary>
+    /// <remarks>
+    /// Always 202. This endpoint is anonymous, so any difference between "sent" and
+    /// "no such account" would be a free directory of who has an account here.
+    /// </remarks>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ForgotPassword(
+        EmailOnlyRequest request, CancellationToken cancellationToken)
+    {
+        await auth.SendPasswordResetAsync(request.Email, cancellationToken);
+
+        return Accepted();
+    }
+
+    /// <summary>Completes a password reset using the token from the email.</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword(
+        ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var result = await auth.ResetPasswordAsync(
+            request.UserId, request.Token, request.NewPassword, cancellationToken);
+
+        return result.Succeeded ? NoContent() : BadRequest(result.ToValidationProblem());
+    }
+
+    /// <summary>Changes the caller's own password.</summary>
+    /// <remarks>
+    /// Succeeding here ends every other session immediately: Identity rolls the
+    /// security stamp, which the Phase 08 check enforces on the next request, and
+    /// the refresh tokens are revoked as well. Changing a password because it may
+    /// have been exposed would be pointless if the exposed session stayed live.
+    /// </remarks>
+    [HttpPost("change-password")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword(
+        ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        var result = await auth.ChangePasswordAsync(
+            User.GetUserId(), request.CurrentPassword, request.NewPassword, cancellationToken);
+
+        return result.Succeeded ? NoContent() : BadRequest(result.ToValidationProblem());
+    }
 }
