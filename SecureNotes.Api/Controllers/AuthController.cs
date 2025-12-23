@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SecureNotes.Api.Domain;
 using SecureNotes.Api.Common;
 using SecureNotes.Api.DTOs;
@@ -10,6 +11,7 @@ namespace SecureNotes.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting(RateLimits.AuthPolicy)]
 /// <remarks>
 /// The fallback policy makes every endpoint require an authenticated caller, so the
 /// four endpoints below have to opt out explicitly. Three of them could not work any

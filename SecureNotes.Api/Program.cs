@@ -1,8 +1,12 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -169,6 +173,58 @@ builder.Services
         policy.AddRequirements(new EmailConfirmationRequirement(Policies.ConfirmationGrace)))
 ;
 
+// Keyed by client IP so one noisy source cannot lock everyone else out, and
+// applied only to /api/auth. The rest of the API needs a valid token to reach
+// at all, which is its own limit; these endpoints are the ones an anonymous
+// caller can hammer, and they are where credential stuffing lands.
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.AddPolicy(RateLimits.AuthPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = RateLimits.AuthPermitsPerWindow,
+                Window = RateLimits.AuthWindow,
+
+                // No queue. Queueing a rejected login means holding a connection
+                // open on behalf of whoever is attacking you, which turns a rate
+                // limit into a resource the attacker gets to consume.
+                QueueLimit = 0,
+            }));
+
+    limiter.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        // Without Retry-After a well-behaved client has no idea whether to come
+        // back in a second or an hour, so it guesses, and usually guesses wrong.
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)retryAfter.TotalSeconds).ToString();
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new ProblemDetails
+            {
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.29",
+                Title = "Too many requests.",
+                Status = StatusCodes.Status429TooManyRequests,
+                Detail = "Too many attempts from this address. Try again shortly.",
+            },
+            cancellationToken);
+    };
+});
+
+// AddProblemDetails is what makes IProblemDetailsService available and gives the
+// framework's own 4xx responses the same RFC 9457 shape the handlers produce, so a
+// client has one error format to parse rather than two.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+builder.Services.AddHealthChecks().AddNpgSql(connectionString, name: "postgres");
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(swagger =>
 {
@@ -218,6 +274,17 @@ var app = builder.Build();
 
 await DbInitializer.SeedAsync(app.Services);
 
+// First in the pipeline, so a 500 anywhere below still comes back as a problem
+// document rather than an empty response or a stack trace.
+app.UseExceptionHandler();
+
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+// Before authentication, deliberately. An unauthenticated flood is exactly what
+// this exists to stop, and a limiter placed after the authentication middleware
+// only ever sees the requests that already got through.
+app.UseRateLimiter();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -232,5 +299,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// AllowAnonymous explicitly: the fallback policy from Phase 10 covers endpoints,
+// and this is one. Swagger got away without it only because it is middleware that
+// runs before the endpoint pipeline.
+app.MapHealthChecks("/health").AllowAnonymous();
 
 app.Run();
