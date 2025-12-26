@@ -1,5 +1,7 @@
+using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SecureNotes.Api.Data;
@@ -35,6 +37,8 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
 
     public const string AdminPassword = "seed admin password, tests only";
 
+    private int _clients;
+
     public async Task InitializeAsync()
     {
         await _database.StartAsync();
@@ -69,6 +73,30 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         // return stack traces, so the suite would be exercising a pipeline no
         // deployment runs. Not Production either, so the distinction stays visible.
         builder.UseEnvironment("Testing");
+
+        builder.ConfigureTestServices(services =>
+            services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>());
+    }
+
+    /// <summary>
+    /// Hands every client its own remote address, so each lands in a rate limit
+    /// partition of its own.
+    /// </summary>
+    /// <remarks>
+    /// ConfigureClient rather than a helper method, because CreateClient() and
+    /// CreateDefaultClient() both route through it. A test that calls the ordinary
+    /// method still gets an isolated client, so there is nothing to remember and
+    /// nothing to forget - and a test that did forget would fail or pass depending
+    /// on what ran before it, which is the worst kind of failure to own.
+    /// </remarks>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+
+        var ordinal = Interlocked.Increment(ref _clients);
+        var address = new IPAddress([10, (byte)(ordinal >> 16), (byte)(ordinal >> 8), (byte)ordinal]);
+
+        client.DefaultRequestHeaders.Add(TestRemoteIpStartupFilter.HeaderName, address.ToString());
     }
 
     /// <summary>
