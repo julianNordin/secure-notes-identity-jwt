@@ -9,17 +9,24 @@ using SecureNotes.Api.Services;
 
 namespace SecureNotes.Api.Controllers;
 
+/// <remarks>
+/// The fallback policy makes every endpoint require an authenticated caller, so the
+/// eight anonymous endpoints below have to opt out explicitly, and that list is the
+/// API's public attack surface written down in one place.
+///
+/// Register and login could not work any other way - you cannot log in if logging in
+/// requires being logged in. Refresh, logout, confirm-email, resend-confirmation,
+/// forgot-password and reset-password are anonymous because in each case the
+/// credential is the token in the request body rather than an access token: someone
+/// whose password is lost, or whose session has expired, has no access token to
+/// present, and those are exactly the people these endpoints exist for.
+///
+/// me, logout-all and change-password keep [Authorize] and are the only three here
+/// that act on the caller's own live session.
+/// </remarks>
 [ApiController]
 [Route("api/auth")]
 [EnableRateLimiting(RateLimits.AuthPolicy)]
-/// <remarks>
-/// The fallback policy makes every endpoint require an authenticated caller, so the
-/// four endpoints below have to opt out explicitly. Three of them could not work any
-/// other way - you cannot log in if logging in requires being logged in - and logout
-/// is anonymous because the refresh token it revokes is itself the credential, and
-/// demanding a live access token as well would mean an expired session could never
-/// be cleaned up.
-/// </remarks>
 public sealed class AuthController(IAuthService auth, UserManager<AppUser> users) : ControllerBase
 {
     /// <summary>

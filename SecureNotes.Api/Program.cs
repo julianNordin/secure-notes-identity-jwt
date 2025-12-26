@@ -163,6 +163,15 @@ builder.Services.AddSingleton<IAuthorizationHandler, NoteAuthorizationHandler>()
 builder.Services
     .AddAuthorizationBuilder()
 
+    // Secure by default. The point of a fallback policy is the failure mode it
+    // creates: without one, forgetting [Authorize] on a new endpoint publishes it
+    // to anyone who finds the URL, and nothing anywhere complains - the symptom of
+    // the mistake is that everything works. With one, the same forgetting returns
+    // 401 and gets noticed in minutes. It also inverts who has to be careful: the
+    // endpoints that are deliberately public now have to say so, and that list is
+    // short enough to read in one screen and audit.
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+
     // The same rule as [Authorize(Roles = "Admin")], written the other way round so
     // the two forms can be compared. A role is a claim with an attribute that knows
     // its name; the moment a rule says anything other than "is a member of", the
