@@ -315,3 +315,21 @@ app.MapControllers();
 app.MapHealthChecks("/health").AllowAnonymous();
 
 app.Run();
+
+/// <summary>
+/// Makes the entry point reachable from the test assembly.
+/// </summary>
+/// <remarks>
+/// A file of top-level statements is compiled into a class the compiler writes
+/// for you, named Program and declared internal. WebApplicationFactory&lt;Program&gt;
+/// needs to name that type from another assembly, so without this the test project
+/// does not compile, with CS0122: 'Program' is inaccessible due to its protection
+/// level - an error about a type that appears nowhere in the source.
+///
+/// A partial declaration here is merged into the generated one and decides its
+/// accessibility. InternalsVisibleTo would also work and is worse: it opens every
+/// internal type in the application to the test assembly in order to solve a
+/// problem with exactly one of them, and it makes tests able to reach past the
+/// public surface they exist to check.
+/// </remarks>
+public partial class Program;
