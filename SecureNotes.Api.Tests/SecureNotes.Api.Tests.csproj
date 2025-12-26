@@ -9,7 +9,38 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
+
+    <!-- WebApplicationFactory<Program>: boots the real application in-process, with
+         the real middleware pipeline, the real Identity configuration and the real
+         authorization policies. That is the whole point of testing at this level -
+         a mocked pipeline would answer questions about the mock, and every claim
+         this project makes is a claim about middleware order and policy wiring.
+
+         Held at 9.0.1 to match every other Microsoft.AspNetCore.* reference in the
+         solution. 9.0.9 also restores and builds cleanly - unlike the EF Core skew
+         in Phase 02, this package binds to the Microsoft.AspNetCore.App shared
+         framework rather than to individual assemblies, so there is no dependency
+         graph for it to disagree with. One version number across the solution is
+         still worth having: it leaves a single fact to check when something does
+         skew, instead of two. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.1" />
+
+    <!-- FakeTimeProvider, for Phases 15 and 16. Lockout windows are fifteen minutes
+         and access tokens live fifteen minutes, and a suite that proves those by
+         sleeping is a suite nobody runs. Program.cs registers TimeProvider.System
+         in DI precisely so this can take its place. -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+
+    <!-- A real postgres:17-alpine per test run, not EFCore.InMemory. Half of what
+         this project asserts is a statement about the database: Identity's unique
+         index on normalised email, the unique index on the refresh token hash,
+         cascade delete from a user to their notes, and case-insensitive ILIKE
+         search. A provider that fakes the database cannot fail any of those tests,
+         which makes passing them meaningless. -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
+
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
