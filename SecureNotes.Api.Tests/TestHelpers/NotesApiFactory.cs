@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SecureNotes.Api.Data;
 using Testcontainers.PostgreSql;
 
@@ -31,13 +32,32 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
     /// placeholder it rejects. It is not a secret: it exists only inside a test
     /// process, and every token it signs dies with the container.
     /// </summary>
-    private const string SigningKey = "integration-tests-only-signing-key-not-a-secret-0123456789";
+    public const string SigningKey = "integration-tests-only-signing-key-not-a-secret-0123456789";
 
     public const string AdminEmail = "seed-admin@securenotes.test";
 
     public const string AdminPassword = "seed admin password, tests only";
 
     private int _clients;
+
+    /// <summary>
+    /// The application's clock, under the test's control.
+    /// </summary>
+    /// <remarks>
+    /// Frozen rather than ticking, and reset to the real time before each test by
+    /// ApiTestBase. Winding it backwards before logging in is how an expired access
+    /// token is produced without a suite that sleeps: TokenService stamps exp from
+    /// this clock, while the JWT handler validates exp against the real one.
+    ///
+    /// It does not reach Identity's lockout. Neither UserManager nor SignInManager
+    /// takes a TimeProvider in 9.0.1 - checked by reflection, both come back empty -
+    /// so lockout windows are computed against DateTimeOffset.UtcNow directly and no
+    /// amount of fake time will move them.
+    /// </remarks>
+    public RebindableClock Clock { get; } = new();
+
+    /// <summary>Starts the application clock again from a chosen moment.</summary>
+    public void RebindClock(DateTimeOffset now) => Clock.RebindTo(now);
 
     public async Task InitializeAsync()
     {
@@ -75,7 +95,15 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
         builder.UseEnvironment("Testing");
 
         builder.ConfigureTestServices(services =>
-            services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>());
+        {
+            services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>();
+
+            // Replace rather than add: Program.cs already registered
+            // TimeProvider.System, and leaving both in place would work only because
+            // the last registration wins, which is a rule nobody should have to know.
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(Clock);
+        });
     }
 
     /// <summary>

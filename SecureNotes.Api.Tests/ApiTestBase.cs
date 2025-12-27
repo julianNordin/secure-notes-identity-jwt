@@ -15,7 +15,14 @@ public abstract class ApiTestBase(NotesApiFactory factory) : IAsyncLifetime
     // test's rows behind for anyone who looks at the database, and does nothing at
     // all when a test fails hard enough to skip its own teardown - which is exactly
     // the run where the next test's mysterious failure would be blamed on itself.
-    public Task InitializeAsync() => Factory.ResetDatabaseAsync();
+    public Task InitializeAsync()
+    {
+        // Back to real time, so a test that wound the clock cannot change what
+        // the next one sees.
+        Factory.RebindClock(DateTimeOffset.UtcNow);
+
+        return Factory.ResetDatabaseAsync();
+    }
 
     public Task DisposeAsync() => Task.CompletedTask;
 }
