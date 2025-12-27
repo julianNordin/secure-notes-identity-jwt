@@ -118,6 +118,29 @@ public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBas
         Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
     }
 
+    /// <summary>
+    /// The account behind a live token is deleted. The token is still perfectly
+    /// signed and still inside its lifetime, and it is refused.
+    /// </summary>
+    /// <remarks>
+    /// The same fail-closed path an infrastructure failure takes: SecurityStampCheck
+    /// cannot produce a user, so it fails the token rather than letting the request
+    /// through to find out what happens next. Worth pinning because the natural
+    /// shape of a caching change - keep the stamp, skip the lookup - would turn this
+    /// into a request that proceeds with a principal for an account that is gone.
+    /// </remarks>
+    [Fact]
+    public async Task Me_Returns401RatherThan500_WhenTheAccountBehindTheTokenIsDeleted()
+    {
+        using var account = await Factory.RegisterAndLoginAsync();
+        Assert.Equal(HttpStatusCode.OK, (await account.Client.GetAsync("/api/auth/me")).StatusCode);
+
+        await Factory.WithDbAsync(db => db.Users.Where(u => u.Id == account.UserId).ExecuteDeleteAsync());
+
+        var response = await account.Client.GetAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     [Fact]
     public async Task LogoutAll_Returns401_WhenTheCallerIsAnonymous()
     {
