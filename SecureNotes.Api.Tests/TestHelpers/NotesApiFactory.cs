@@ -103,6 +103,14 @@ public sealed class NotesApiFactory : WebApplicationFactory<Program>, IAsyncLife
             // the last registration wins, which is a rule nobody should have to know.
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+
+            // Lets MVC discover controllers declared in the test assembly - which
+            // is only DeliberatelyBareController, the unattributed endpoint the
+            // fallback policy test needs. There is no way to write that test using
+            // the application's own controllers, because every one of them says
+            // what it wants, and the thing under test is what happens when one
+            // does not.
+            services.AddControllers().AddApplicationPart(typeof(NotesApiFactory).Assembly);
         });
     }
 
