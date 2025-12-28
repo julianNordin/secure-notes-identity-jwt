@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using SecureNotes.Api.DTOs;
 using SecureNotes.Api.Tests.TestHelpers;
 
@@ -74,6 +75,69 @@ public sealed class AuthorizationMatrixTests(NotesApiFactory factory) : ApiTestB
 
         Assert.Equal(expected, response.StatusCode);
     }
+
+    /// <summary>
+    /// The claim the matrix cannot make on its own. The table proves that another
+    /// user's note answers 404; it does not prove that this is the *same* 404 an id
+    /// which never existed produces. If the two differed by so much as a word the
+    /// pair would be an oracle - ask for an id, and the shape of the refusal tells
+    /// you whether there is a real note behind it you are not allowed to see. That
+    /// is exactly the question 404 was chosen in order not to answer, so the
+    /// sameness is the feature and the matrix cell is only half of it.
+    /// </summary>
+    /// <remarks>
+    /// Written first as a raw byte comparison, which cannot pass: ProblemDetails
+    /// carries a per-request traceId, so no two responses of any kind are ever
+    /// byte-identical. The third request is the control that establishes this - two
+    /// refusals that are both saying nothing still differ - which is what makes
+    /// normalising the traceId away honest rather than convenient.
+    /// </remarks>
+    [Theory]
+    [InlineData(Operation.Read)]
+    [InlineData(Operation.Update)]
+    [InlineData(Operation.Delete)]
+    public async Task Endpoint_RefusesSomebodyElsesNoteExactlyAsItRefusesAnIdThatNeverExisted(
+        Operation operation)
+    {
+        using var owner = await Factory.RegisterAndLoginAsync();
+        using var other = await Factory.RegisterAndLoginAsync();
+
+        var note = await CreateNoteAsync(owner);
+
+        var hidden = await SendAsync(other.Client, operation, note.Id);
+        var absent = await SendAsync(other.Client, operation, Guid.CreateVersion7());
+        var absentAgain = await SendAsync(other.Client, operation, Guid.CreateVersion7());
+
+        Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
+        Assert.Equal(hidden.StatusCode, absent.StatusCode);
+        Assert.Equal(hidden.Content.Headers.ContentType, absent.Content.Headers.ContentType);
+
+        var hiddenBody = Anonymised(await hidden.Content.ReadAsStringAsync());
+        var absentBody = await absent.Content.ReadAsStringAsync();
+        var absentAgainBody = await absentAgain.Content.ReadAsStringAsync();
+
+        // The control. Two ids that both never existed cannot be telling the caller
+        // anything different, and their raw bodies still differ - so a raw
+        // comparison proves nothing either way. What survives normalisation is the
+        // only part that could carry a signal, and it also shows the requested id
+        // is not echoed back.
+        Assert.NotEqual(absentBody, absentAgainBody);
+        Assert.Equal(Anonymised(absentBody), Anonymised(absentAgainBody));
+
+        // Not vacuous: the body has to be shown to say something before its
+        // sameness means anything. Two empty strings are also equal.
+        Assert.Contains("\"status\":404", hiddenBody);
+        Assert.Equal(Anonymised(absentBody), hiddenBody);
+    }
+
+    /// <summary>
+    /// Blanks the one field that differs on every response the application has ever
+    /// produced - the per-request correlation id - and leaves every other byte where
+    /// it is, so an extra field, a reordering or a stray space all still count as a
+    /// difference worth failing over.
+    /// </summary>
+    private static string Anonymised(string body) =>
+        Regex.Replace(body, "\"traceId\":\"[^\"]*\"", "\"traceId\":\"<per-request>\"");
 
     private static async Task<NoteResponse> CreateNoteAsync(AuthenticatedClient owner)
     {
