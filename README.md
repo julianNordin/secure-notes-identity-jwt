@@ -9,7 +9,7 @@ admins see all of them, and the notes themselves are deliberately boring so that
 part — ASP.NET Core Identity, JWT access tokens, rotating refresh tokens with reuse detection, and
 three distinct styles of authorization — is what a reader's attention lands on.
 
-**Status:** 🚧 In progress — Phase 16 of 18 complete. See [Roadmap](#roadmap) below.
+**Status:** 🚧 In progress — Phase 17 of 18 complete. See [Roadmap](#roadmap) below.
 
 ## Why this project
 
@@ -56,7 +56,7 @@ dotnet run --project SecureNotes.Api      # http://localhost:5080
 - [x] **14** · Integration test harness: WebApplicationFactory + Testcontainers
 - [x] **15** · Integration tests: authentication flows
 - [x] **16** · Integration tests: the authorization matrix
-- [ ] **17** · React login client
+- [x] **17** · React login client
 - [ ] **18** · The httpOnly cookie refactor, CI, README, `v1.0`
 
 ## License
