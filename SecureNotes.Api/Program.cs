@@ -226,6 +226,26 @@ builder.Services.AddRateLimiter(limiter =>
     };
 });
 
+// CORS. The client runs on its own origin in development, so without this the
+// browser will not let it read any response the API sends - including the 401
+// that tells it to go and refresh.
+//
+// An explicit origin list rather than AllowAnyOrigin, and not merely as hygiene:
+// AllowCredentials and a wildcard origin are mutually exclusive by specification,
+// and AllowCredentials is exactly what Phase 18 needs once the refresh token
+// leaves the JSON body for an httpOnly cookie. Settling it now makes that
+// refactor a client-side change instead of a CORS debugging session.
+//
+// Headers are listed rather than allowed wholesale, so the preflight for a
+// request carrying Authorization has to be permitted on purpose.
+const string ClientCorsPolicy = "ClientApp";
+
+builder.Services.AddCors(cors => cors.AddPolicy(ClientCorsPolicy, policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .WithMethods("GET", "POST", "PUT", "DELETE")
+    .WithHeaders("Authorization", "Content-Type")
+    .AllowCredentials()));
+
 // AddProblemDetails is what makes IProblemDetailsService available and gives the
 // framework's own 4xx responses the same RFC 9457 shape the handlers produce, so a
 // client has one error format to parse rather than two.
@@ -288,6 +308,20 @@ await DbInitializer.SeedAsync(app.Services);
 app.UseExceptionHandler();
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
+
+// Before the rate limiter and before authentication, and both placements matter.
+//
+// Before authentication, because the CORS headers have to be on the response the
+// browser actually receives, and the interesting responses here are 401s. Placed
+// after, the browser reports an opaque network failure instead of surfacing the
+// 401 that tells the client to refresh - so the whole refresh flow breaks in a
+// browser while continuing to work perfectly under curl.
+//
+// Before the rate limiter, so that a 429 still carries the headers that let the
+// client read it rather than presenting as a CORS error, and so that a preflight -
+// which reaches no endpoint and touches no database - does not spend the caller's
+// ten-per-minute auth budget before the real request has even been sent.
+app.UseCors(ClientCorsPolicy);
 
 // Before authentication, deliberately. An unauthenticated flood is exactly what
 // this exists to stop, and a limiter placed after the authentication middleware
