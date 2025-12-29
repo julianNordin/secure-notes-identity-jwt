@@ -1,0 +1,96 @@
+.page {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.identity {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.roles {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.panel {
+  margin-top: 1.5rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panelTitle {
+  margin: 0 0 0.9rem;
+  font-size: 1rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.note {
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.noteHead {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.noteTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.noteBody {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.delete {
+  background: transparent;
+  color: var(--danger);
+  border-color: transparent;
+  padding: 0.2rem 0.5rem;
+}
+
+.empty,
+.error {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.owner {
+  font-size: 0.78rem;
+  color: var(--accent);
+}
