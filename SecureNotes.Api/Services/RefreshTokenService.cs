@@ -11,7 +11,8 @@ namespace SecureNotes.Api.Services;
 public interface IRefreshTokenService
 {
     /// <summary>Issues a new token, into <paramref name="familyId"/> if rotating.</summary>
-    Task<string> IssueAsync(AppUser user, Guid? familyId, string? ip, CancellationToken cancellationToken);
+    Task<IssuedRefreshToken> IssueAsync(
+        AppUser user, Guid? familyId, string? ip, CancellationToken cancellationToken);
 
     /// <summary>Looks a presented token up. Returns the row whether or not it is still active.</summary>
     Task<RefreshToken?> FindAsync(string presented, CancellationToken cancellationToken);
@@ -24,6 +25,13 @@ public interface IRefreshTokenService
     /// <summary>Revokes every live token belonging to one user.</summary>
     Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// A freshly issued token and the instant the stored row stops being honoured.
+/// The cookie's expiry is set from this rather than recomputed, so the browser
+/// cannot end up holding a cookie the server has already given up on.
+/// </summary>
+public readonly record struct IssuedRefreshToken(string Token, DateTimeOffset ExpiresAt);
 
 public sealed class RefreshTokenService(
     AppDbContext db,
@@ -53,11 +61,12 @@ public sealed class RefreshTokenService(
 
     private readonly JwtOptions _options = options.Value;
 
-    public async Task<string> IssueAsync(
+    public async Task<IssuedRefreshToken> IssueAsync(
         AppUser user, Guid? familyId, string? ip, CancellationToken cancellationToken)
     {
         var raw = Base64UrlEncode(RandomNumberGenerator.GetBytes(TokenBytes));
         var now = clock.GetUtcNow();
+        var expiresAt = now.AddDays(_options.RefreshTokenDays);
 
         db.RefreshTokens.Add(new RefreshToken
         {
@@ -66,7 +75,7 @@ public sealed class RefreshTokenService(
             TokenHash = Hash(raw),
             FamilyId = familyId ?? Guid.CreateVersion7(),
             CreatedAt = now,
-            ExpiresAt = now.AddDays(_options.RefreshTokenDays),
+            ExpiresAt = expiresAt,
             CreatedByIp = ip,
         });
 
@@ -81,7 +90,7 @@ public sealed class RefreshTokenService(
             .Where(t => t.UserId == user.Id && t.ExpiresAt < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
 
-        return raw;
+        return new IssuedRefreshToken(raw, expiresAt);
     }
 
     public Task<RefreshToken?> FindAsync(string presented, CancellationToken cancellationToken)

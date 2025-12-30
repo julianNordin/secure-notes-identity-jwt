@@ -73,10 +73,10 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
-        var token = await auth.LoginAsync(
+        var session = await auth.LoginAsync(
             request, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
 
-        if (token is null)
+        if (session is null)
         {
             return Unauthorized(new ProblemDetails
             {
@@ -85,7 +85,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
             });
         }
 
-        return Ok(token);
+        return SessionResult(session);
     }
 
     /// <summary>
@@ -128,13 +128,25 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Refresh(RefreshRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
     {
-        var token = await auth.RefreshAsync(
-            request.RefreshToken, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+        // Read from the cookie, and from nowhere else. Accepting it from the body
+        // as well "for compatibility" would leave the whole XSS-readable path open
+        // and make the httpOnly flag decorative.
+        var presented = Request.Cookies[RefreshCookie.Name];
 
-        if (token is null)
+        var session = string.IsNullOrEmpty(presented)
+            ? null
+            : await auth.RefreshAsync(
+                presented, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+
+        if (session is null)
         {
+            // Expired, revoked, or a replay that has just taken the whole family
+            // down. Clear the cookie whichever it was: a browser holding a token
+            // the server will never honour again only fails more slowly.
+            Response.Cookies.Delete(RefreshCookie.Name, RefreshCookie.Expired());
+
             return Unauthorized(new ProblemDetails
             {
                 Title = "Invalid refresh token.",
@@ -142,7 +154,7 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
             });
         }
 
-        return Ok(token);
+        return SessionResult(session);
     }
 
     /// <summary>
@@ -157,9 +169,18 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     [HttpPost("logout")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> Logout(RefreshRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
-        await auth.LogoutAsync(request.RefreshToken, cancellationToken);
+        var presented = Request.Cookies[RefreshCookie.Name];
+
+        if (!string.IsNullOrEmpty(presented))
+        {
+            await auth.LogoutAsync(presented, cancellationToken);
+        }
+
+        // Cleared even when there was nothing to revoke, so the answer stays the
+        // same 204 either way and this browser is logged out regardless.
+        Response.Cookies.Delete(RefreshCookie.Name, RefreshCookie.Expired());
 
         return NoContent();
     }
@@ -182,6 +203,9 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
     public async Task<IActionResult> LogoutEverywhere(CancellationToken cancellationToken)
     {
         await auth.LogoutEverywhereAsync(User.GetUserId(), cancellationToken);
+
+        // Everywhere includes here, and the cookie is part of here.
+        Response.Cookies.Delete(RefreshCookie.Name, RefreshCookie.Expired());
 
         return NoContent();
     }
@@ -276,4 +300,17 @@ public sealed class AuthController(IAuthService auth, UserManager<AppUser> users
 
         return result.Succeeded ? NoContent() : BadRequest(result.ToValidationProblem());
     }
+
+    /// <summary>
+    /// Sends the access token in the body and the refresh token in a cookie the
+    /// page's own script cannot read.
+    /// </summary>
+    private IActionResult SessionResult(IssuedSession session)
+    {
+        Response.Cookies.Append(
+            RefreshCookie.Name, session.RefreshToken, RefreshCookie.Options(session.RefreshExpiresAt));
+
+        return Ok(session.Tokens);
+    }
+
 }

@@ -12,13 +12,18 @@ namespace SecureNotes.Api.Tests.Auth;
 [Collection(ApiCollection.Name)]
 public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBase(factory)
 {
-    private async Task<TokenResponse> LoginAgainAsync(HttpClient client, AuthenticatedClient account)
+    /// <summary>A second device: its access token, and the refresh token from its cookie.</summary>
+    private sealed record Device(string AccessToken, string RefreshToken);
+
+    private async Task<Device> LoginAgainAsync(HttpClient client, AuthenticatedClient account)
     {
         var response = await client.PostAsJsonAsync(
             "/api/auth/login", new LoginRequest(account.Email, account.Password));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        return (await response.Content.ReadFromJsonAsync<TokenResponse>())!;
+        var tokens = (await response.Content.ReadFromJsonAsync<TokenResponse>())!;
+
+        return new Device(tokens.AccessToken, RefreshCookies.TokenOn(response)!);
     }
 
     [Fact]
@@ -26,12 +31,10 @@ public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBas
     {
         using var account = await Factory.RegisterAndLoginAsync();
 
-        var logout = await account.Client.PostAsJsonAsync(
-            "/api/auth/logout", new RefreshRequest(account.RefreshToken));
+        var logout = await RefreshCookies.PostAsync(account.Client, "/api/auth/logout", account.RefreshToken);
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
 
-        var refresh = await account.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(account.RefreshToken));
+        var refresh = await RefreshCookies.RefreshAsync(account.Client, account.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
     }
 
@@ -45,8 +48,7 @@ public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBas
     {
         using var client = Factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync(
-            "/api/auth/logout", new RefreshRequest("a token nobody ever issued"));
+        var response = await RefreshCookies.PostAsync(client, "/api/auth/logout", "a token nobody ever issued");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
@@ -93,8 +95,7 @@ public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBas
         Assert.Equal(0, await Factory.WithDbAsync(db => db.RefreshTokens
             .CountAsync(t => t.UserId == laptop.UserId && t.RevokedAt == null)));
 
-        var refresh = await phoneClient.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(phone.RefreshToken));
+        var refresh = await RefreshCookies.RefreshAsync(phoneClient, phone.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
     }
 
@@ -113,8 +114,7 @@ public sealed class SessionRevocationTests(NotesApiFactory factory) : ApiTestBas
 
         Assert.Equal(HttpStatusCode.OK, (await bob.Client.GetAsync("/api/auth/me")).StatusCode);
 
-        var refresh = await bob.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(bob.RefreshToken));
+        var refresh = await RefreshCookies.RefreshAsync(bob.Client, bob.RefreshToken);
         Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
     }
 

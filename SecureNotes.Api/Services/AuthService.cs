@@ -19,10 +19,10 @@ public interface IAuthService
     Task<RegistrationResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken);
 
     /// <summary>Returns null for every kind of failed login, on purpose.</summary>
-    Task<TokenResponse?> LoginAsync(LoginRequest request, string? ip, CancellationToken cancellationToken);
+    Task<IssuedSession?> LoginAsync(LoginRequest request, string? ip, CancellationToken cancellationToken);
 
     /// <summary>Rotates a refresh token. Null if it is unknown, expired or already spent.</summary>
-    Task<TokenResponse?> RefreshAsync(string presented, string? ip, CancellationToken cancellationToken);
+    Task<IssuedSession?> RefreshAsync(string presented, string? ip, CancellationToken cancellationToken);
 
     /// <summary>Revokes the presented refresh token. Idempotent and always silent.</summary>
     Task LogoutAsync(string presented, CancellationToken cancellationToken);
@@ -121,7 +121,7 @@ public sealed class AuthService(
         return new RegistrationResult(RegistrationOutcome.Rejected, result);
     }
 
-    public async Task<TokenResponse?> LoginAsync(
+    public async Task<IssuedSession?> LoginAsync(
         LoginRequest request, string? ip, CancellationToken cancellationToken)
     {
         var user = await users.FindByEmailAsync(request.Email);
@@ -150,12 +150,12 @@ public sealed class AuthService(
 
         // A fresh login starts a new family. Nothing links this session to a previous
         // one, so revoking an old session cannot touch this one.
-        var refresh = await refreshTokens.IssueAsync(user, familyId: null, ip, cancellationToken);
+        var issued = await refreshTokens.IssueAsync(user, familyId: null, ip, cancellationToken);
 
-        return await BuildResponseAsync(user, refresh);
+        return await BuildResponseAsync(user, issued);
     }
 
-    public async Task<TokenResponse?> RefreshAsync(
+    public async Task<IssuedSession?> RefreshAsync(
         string presented, string? ip, CancellationToken cancellationToken)
     {
         var stored = await refreshTokens.FindAsync(presented, cancellationToken);
@@ -197,7 +197,7 @@ public sealed class AuthService(
         // replacement is issued into the same family, so one token is usable exactly
         // once and a copy taken in transit dies as soon as the real client refreshes.
         var replacement = await refreshTokens.IssueAsync(stored.User, stored.FamilyId, ip, cancellationToken);
-        await refreshTokens.RevokeAsync(stored, replacement, cancellationToken);
+        await refreshTokens.RevokeAsync(stored, replacement.Token, cancellationToken);
 
         return await BuildResponseAsync(stored.User, replacement);
     }
@@ -236,16 +236,17 @@ public sealed class AuthService(
             userId, killed);
     }
 
-    private async Task<TokenResponse> BuildResponseAsync(AppUser user, string refreshToken)
+    private async Task<IssuedSession> BuildResponseAsync(AppUser user, IssuedRefreshToken refresh)
     {
         var roles = (await users.GetRolesAsync(user)).ToArray();
         var access = tokens.CreateAccessToken(user, roles);
 
-        return new TokenResponse(
+        var body = new TokenResponse(
             access.Value,
             "Bearer",
-            (int)Math.Round((access.ExpiresAt - clock.GetUtcNow()).TotalSeconds),
-            refreshToken);
+            (int)Math.Round((access.ExpiresAt - clock.GetUtcNow()).TotalSeconds));
+
+        return new IssuedSession(body, refresh.Token, refresh.ExpiresAt);
     }
 
     public async Task SendConfirmationAsync(AppUser user, CancellationToken cancellationToken)

@@ -17,10 +17,10 @@ public sealed class ReuseDetectionTests(NotesApiFactory factory) : ApiTestBase(f
 {
     private static async Task<string> RotateAsync(HttpClient client, string refreshToken)
     {
-        var response = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(refreshToken));
+        var response = await RefreshCookies.RefreshAsync(client, refreshToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        return (await response.Content.ReadFromJsonAsync<TokenResponse>())!.RefreshToken;
+        return RefreshCookies.TokenOn(response)!;
     }
 
     /// <summary>
@@ -38,11 +38,11 @@ public sealed class ReuseDetectionTests(NotesApiFactory factory) : ApiTestBase(f
         var live = await RotateAsync(account.Client, second);
 
         // The attacker presents the copy they took before the first rotation.
-        var replay = await account.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(stolen));
+        var replay = await RefreshCookies.RefreshAsync(account.Client, stolen);
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
 
         // The honest client's token was never presented to anybody and is now dead.
-        var afterwards = await account.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(live));
+        var afterwards = await RefreshCookies.RefreshAsync(account.Client, live);
         Assert.Equal(HttpStatusCode.Unauthorized, afterwards.StatusCode);
 
         var liveTokens = await Factory.WithDbAsync(db => db.RefreshTokens
@@ -62,7 +62,7 @@ public sealed class ReuseDetectionTests(NotesApiFactory factory) : ApiTestBase(f
         using var account = await Factory.RegisterAndLoginAsync();
         var stolen = account.RefreshToken;
         await RotateAsync(account.Client, stolen);
-        await account.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(stolen));
+        await RefreshCookies.RefreshAsync(account.Client, stolen);
 
         using var client = Factory.CreateClient();
         var response = await client.PostAsJsonAsync(
@@ -82,9 +82,9 @@ public sealed class ReuseDetectionTests(NotesApiFactory factory) : ApiTestBase(f
         using var laptop = await Factory.RegisterAndLoginAsync();
 
         using var phoneClient = Factory.CreateClient();
-        var phone = (await (await phoneClient.PostAsJsonAsync(
-            "/api/auth/login", new LoginRequest(laptop.Email, laptop.Password)))
-            .Content.ReadFromJsonAsync<TokenResponse>())!;
+        var phoneLogin = await phoneClient.PostAsJsonAsync(
+            "/api/auth/login", new LoginRequest(laptop.Email, laptop.Password));
+        var phoneRefresh = RefreshCookies.TokenOn(phoneLogin)!;
 
         var families = await Factory.WithDbAsync(db => db.RefreshTokens
             .Where(t => t.UserId == laptop.UserId)
@@ -96,11 +96,10 @@ public sealed class ReuseDetectionTests(NotesApiFactory factory) : ApiTestBase(f
         // Burn the laptop's family with a replay.
         var stolen = laptop.RefreshToken;
         await RotateAsync(laptop.Client, stolen);
-        await laptop.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(stolen));
+        await RefreshCookies.RefreshAsync(laptop.Client, stolen);
 
         // The phone never presented anything twice and keeps working.
-        var response = await phoneClient.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(phone.RefreshToken));
+        var response = await RefreshCookies.RefreshAsync(phoneClient, phoneRefresh);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

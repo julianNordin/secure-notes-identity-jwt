@@ -18,12 +18,22 @@ public record LoginRequest(string Email, string Password);
 public record TokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
     [property: JsonPropertyName("token_type")] string TokenType,
-    [property: JsonPropertyName("expires_in")] int ExpiresIn,
-    [property: JsonPropertyName("refresh_token")] string RefreshToken);
+    [property: JsonPropertyName("expires_in")] int ExpiresIn);
 
-/// <summary>The OAuth2 <c>refresh_token</c> grant, RFC 6749 section 6.</summary>
-public record RefreshRequest(
-    [property: JsonPropertyName("refresh_token")] string RefreshToken);
+/// <summary>
+/// What a successful login or refresh actually produces: the token response that
+/// goes in the body, and the refresh token that does not.
+/// </summary>
+/// <remarks>
+/// A separate type rather than a [JsonIgnore] on TokenResponse, for the same
+/// reason AdminNoteResponse is its own record in Phase 09. If the refresh token
+/// were a field on the wire shape, the only thing keeping the most sensitive
+/// credential in the system out of a JSON body would be remembering an attribute,
+/// and nobody can audit "we remembered". Here it cannot be serialised by
+/// accident, because it is not on the thing that gets serialised.
+/// </remarks>
+public record IssuedSession(
+    TokenResponse Tokens, string RefreshToken, DateTimeOffset RefreshExpiresAt);
 
 public record MeResponse(Guid Id, string Email, string? DisplayName, IReadOnlyCollection<string> Roles);
 

@@ -20,14 +20,14 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
     {
         using var account = await Factory.RegisterAndLoginAsync();
 
-        var response = await account.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(account.RefreshToken));
+        var response = await RefreshCookies.RefreshAsync(account.Client, account.RefreshToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var rotated = await response.Content.ReadFromJsonAsync<TokenResponse>();
-        Assert.NotEqual(account.RefreshToken, rotated!.RefreshToken);
-        Assert.NotEqual(account.AccessToken, rotated.AccessToken);
+
+        Assert.NotEqual(account.RefreshToken, RefreshCookies.TokenOn(response));
+        Assert.NotEqual(account.AccessToken, rotated!.AccessToken);
     }
 
     /// <summary>
@@ -39,8 +39,7 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
     {
         using var account = await Factory.RegisterAndLoginAsync();
 
-        var rotated = await (await account.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(account.RefreshToken)))
+        var rotated = await (await RefreshCookies.RefreshAsync(account.Client, account.RefreshToken))
             .Content.ReadFromJsonAsync<TokenResponse>();
 
         using var client = Factory.CreateClient();
@@ -60,9 +59,9 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
         using var account = await Factory.RegisterAndLoginAsync();
         var spent = account.RefreshToken;
 
-        await account.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(spent));
+        await RefreshCookies.RefreshAsync(account.Client, spent);
 
-        var replay = await account.Client.PostAsJsonAsync("/api/auth/refresh", new RefreshRequest(spent));
+        var replay = await RefreshCookies.RefreshAsync(account.Client, spent);
 
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
     }
@@ -72,8 +71,7 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
     {
         using var account = await Factory.RegisterAndLoginAsync();
 
-        var response = await account.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest("a token nobody ever issued"));
+        var response = await RefreshCookies.RefreshAsync(account.Client, "a token nobody ever issued");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -87,9 +85,7 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
     {
         using var account = await Factory.RegisterAndLoginAsync();
 
-        var rotated = await (await account.Client.PostAsJsonAsync(
-            "/api/auth/refresh", new RefreshRequest(account.RefreshToken)))
-            .Content.ReadFromJsonAsync<TokenResponse>();
+        var rotated = await RefreshCookies.RefreshAsync(account.Client, account.RefreshToken);
 
         var rows = await Factory.WithDbAsync(db => db.RefreshTokens
             .Where(t => t.UserId == account.UserId)
@@ -101,7 +97,7 @@ public sealed class RefreshRotationTests(NotesApiFactory factory) : ApiTestBase(
 
         // The spent one is revoked and points at its replacement; the new one is live.
         Assert.NotNull(rows[0].RevokedAt);
-        Assert.Equal(Hash(rotated!.RefreshToken), rows[0].ReplacedByTokenHash);
+        Assert.Equal(Hash(RefreshCookies.TokenOn(rotated)!), rows[0].ReplacedByTokenHash);
         Assert.Null(rows[1].RevokedAt);
     }
 

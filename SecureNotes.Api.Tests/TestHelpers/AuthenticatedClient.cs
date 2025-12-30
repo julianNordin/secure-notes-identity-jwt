@@ -23,7 +23,8 @@ public sealed class AuthenticatedClient(
     Guid userId,
     string email,
     string password,
-    TokenResponse tokens) : IDisposable
+    TokenResponse tokens,
+    string refreshToken) : IDisposable
 {
     public HttpClient Client { get; } = client;
 
@@ -35,7 +36,7 @@ public sealed class AuthenticatedClient(
 
     public string AccessToken { get; } = tokens.AccessToken;
 
-    public string RefreshToken { get; } = tokens.RefreshToken;
+    public string RefreshToken { get; } = refreshToken;
 
     public void Dispose() => Client.Dispose();
 }

@@ -68,10 +68,15 @@ public static class ApiFactoryExtensions
         var tokens = await response.Content.ReadFromJsonAsync<TokenResponse>()
             ?? throw new InvalidOperationException("Login succeeded and returned no token payload.");
 
+        // Off the Set-Cookie header, because since Phase 18 the body does not carry
+        // it - which is the point of the refactor, and is asserted on its own.
+        var refreshToken = RefreshCookies.TokenOn(response)
+            ?? throw new InvalidOperationException("Login set no refresh cookie.");
+
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 
-        return new AuthenticatedClient(client, userId, email, password, tokens);
+        return new AuthenticatedClient(client, userId, email, password, tokens, refreshToken);
     }
 
     /// <summary>
