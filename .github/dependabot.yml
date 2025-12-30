@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # Security patches are the point. Everything here is pinned exactly, so
+  # without something opening the pull requests the pins quietly become a list
+  # of the versions that were current on the day the project was written.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /client
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

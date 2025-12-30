@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded run is wasted minutes and a red cross on a commit that has
+# already been replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default. A build job has no business writing to the repository,
+# and the way to guarantee that is to not hand it the token.
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Warnings as errors, because the alternative is a warning count that
+      # grows by one a month until nobody reads the build output at all. This
+      # solution has held at zero since Phase 01.
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      # No service container. The integration tests start their own
+      # postgres:17-alpine through Testcontainers, and ubuntu-latest ships a
+      # working Docker daemon - so CI runs the same database the developer does,
+      # rather than a second arrangement that can drift from it.
+      - name: Test
+        run: >
+          dotnet test --no-build --configuration Release
+          --logger "GitHubActions;summary.includePassedTests=true"
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 14
+
+  client:
+    name: Client
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      # ci rather than install: it installs exactly what the lockfile says and
+      # fails if package.json and the lockfile disagree, which is the whole
+      # reason for committing a lockfile.
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

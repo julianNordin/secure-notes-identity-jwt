@@ -23,6 +23,7 @@
          graph for it to disagree with. One version number across the solution is
          still worth having: it leaves a single fact to check when something does
          skew, instead of two. -->
+    <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.1" />
 
     <!-- FakeTimeProvider, for Phases 15 and 16. Lockout windows are fifteen minutes
