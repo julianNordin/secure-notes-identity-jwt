@@ -1,9 +1,13 @@
-/** The OAuth2 token response, RFC 6749 section 5.1 - which is why these are snake_case. */
+/**
+ * The OAuth2 token response, RFC 6749 section 5.1 - which is why these are
+ * snake_case. There is no refresh_token field: since Phase 18 it travels as an
+ * httpOnly cookie, and this type not having the field is the point rather than an
+ * omission.
+ */
 export interface TokenResponse {
   access_token: string
   token_type: string
   expires_in: number
-  refresh_token: string
 }
 
 export interface Me {

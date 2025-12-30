@@ -2,22 +2,35 @@ import type { ProblemDetails, TokenResponse } from './types'
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080'
 
-const refreshTokenKey = 'securenotes.refresh_token'
-
 /*
  * The access token lives here and nowhere else: a module-level variable, which
  * means it dies with the tab and cannot be read back by anything that manages to
- * run on this origin later. Deliberately not in localStorage - a token in storage
- * outlives the tab, and any XSS on this origin can read it at leisure.
+ * run on this origin later.
  *
- * The refresh token, by contrast, IS in localStorage below, which is worse in
- * exactly the same way and worse again because it lives for days rather than
- * fifteen minutes. That is not an oversight. It is the naive version, shipped
- * honestly, so that Phase 18's move to an httpOnly cookie has a "before" to point
- * at - the diff is the argument, and writing it correctly now would leave nothing
- * to show.
+ * The refresh token is not in this file at all any more. Until Phase 18 it sat in
+ * localStorage, where every script on the origin could read a credential that
+ * outlived the tab by two weeks. It is now an httpOnly cookie: the browser holds
+ * it, attaches it to /api/auth on its own, and no script here - ours or anybody
+ * else's - can read it. There is nothing left to store, which is why the storage
+ * code is gone rather than merely tidied.
  */
 let accessToken: string | null = null
+
+/*
+ * Clear the Phase 17 key once, on load. Moving the token into a cookie does
+ * nothing at all for somebody whose browser is still holding the old value: it
+ * goes on sitting in localStorage, readable by any script on this origin, until
+ * something deletes it. A refactor that leaves the old copy lying around has
+ * moved the credential rather than protected it.
+ *
+ * Guarded, because localStorage throws outright when a browser is set to block
+ * site data, and a cleanup that bricks the application on load is a poor trade.
+ */
+try {
+  localStorage.removeItem('securenotes.refresh_token')
+} catch {
+  // Nothing to clean up if there is no storage to clean it from.
+}
 
 /** Called when the session cannot be renewed, so the UI can stop pretending. */
 let onSessionEnded: (() => void) | null = null
@@ -26,18 +39,12 @@ export function setSessionEndedHandler(handler: (() => void) | null): void {
   onSessionEnded = handler
 }
 
-export function hasStoredSession(): boolean {
-  return localStorage.getItem(refreshTokenKey) !== null
-}
-
 function storeSession(tokens: TokenResponse): void {
   accessToken = tokens.access_token
-  localStorage.setItem(refreshTokenKey, tokens.refresh_token)
 }
 
 function endSession(): void {
   accessToken = null
-  localStorage.removeItem(refreshTokenKey)
   onSessionEnded?.()
 }
 
@@ -79,15 +86,12 @@ function refresh(): Promise<string | null> {
 }
 
 async function requestRefresh(): Promise<string | null> {
-  const refreshToken = localStorage.getItem(refreshTokenKey)
-  if (refreshToken === null) {
-    return null
-  }
-
+  // No body, and nothing read from storage. The refresh token rides along as a
+  // cookie the browser attaches by itself, which is the entire point: this code
+  // could not send the token if it wanted to, and neither could an attacker's.
   const response = await fetch(`${baseUrl}/api/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    credentials: 'include',
   })
 
   if (!response.ok) {
@@ -114,7 +118,11 @@ function send(path: string, init: RequestInit): Promise<Response> {
     headers.set('Content-Type', 'application/json')
   }
 
-  return fetch(`${baseUrl}${path}`, { ...init, headers })
+  // credentials: 'include' on every request, because a cross-origin fetch does
+  // not send or store cookies without it - and that includes storing the
+  // Set-Cookie that login replies with. In practice the cookie only ever rides on
+  // /api/auth, because that is the Path the server scoped it to.
+  return fetch(`${baseUrl}${path}`, { ...init, headers, credentials: 'include' })
 }
 
 /**
@@ -123,7 +131,10 @@ function send(path: string, init: RequestInit): Promise<Response> {
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const response = await send(path, init)
 
-  if (response.status !== 401 || !hasStoredSession()) {
+  // Nothing to renew if this browser was never signed in. The client can no
+  // longer look for a stored refresh token to decide - it cannot see the cookie -
+  // so the question it can still answer is whether it ever held an access token.
+  if (response.status !== 401 || accessToken === null) {
     return response
   }
 
@@ -144,6 +155,12 @@ export async function signIn(email: string, password: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
+
+    // Without this the browser throws the Set-Cookie away. A cross-origin fetch
+    // does not store cookies unless it asks to, and it fails silently: login
+    // returns 200, the access token works, everything looks right, and the
+    // session simply does not survive the first reload.
+    credentials: 'include',
   })
 
   if (!response.ok) {
@@ -172,18 +189,15 @@ export async function signUp(email: string, password: string, displayName: strin
 }
 
 export async function signOut(): Promise<void> {
-  const refreshToken = localStorage.getItem(refreshTokenKey)
-
-  if (refreshToken !== null) {
-    // Best effort. If the network is gone the server keeps a live refresh token
-    // until it expires, but this browser has still forgotten it - so the local
-    // half of logging out must not depend on the remote half succeeding.
-    await fetch(`${baseUrl}/api/auth/logout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    }).catch(() => undefined)
-  }
+  // Best effort. If the network is gone the server keeps a live refresh token
+  // until it expires, but this tab has still forgotten its access token - so the
+  // local half of logging out must not depend on the remote half succeeding. The
+  // server clears the cookie in its response, which is the only way it can be
+  // cleared now that no script can touch it.
+  await fetch(`${baseUrl}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => undefined)
 
   endSession()
 }
@@ -191,9 +205,12 @@ export async function signOut(): Promise<void> {
 /**
  * Rebuilds a session after a reload. The access token was in memory and the
  * reload destroyed it, which is the price of keeping it out of storage - and the
- * refresh token is what buys it back. Returns false when the browser has nothing
- * to trade.
+ * cookie is what buys it back.
  */
 export async function restoreSession(): Promise<boolean> {
-  return hasStoredSession() && (await refresh()) !== null
+  // Always asks, because it can no longer check first: whether a refresh cookie
+  // exists is knowledge the browser deliberately withholds from script. One 401
+  // on a cold start is the honest cost of that, and it is cheaper than the thing
+  // it bought.
+  return (await refresh()) !== null
 }
