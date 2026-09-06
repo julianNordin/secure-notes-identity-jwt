@@ -1,5 +1,6 @@
 # secure-notes-identity-jwt
 
+[![CI](https://github.com/julianNordin/secure-notes-identity-jwt/actions/workflows/ci.yml/badge.svg)](https://github.com/julianNordin/secure-notes-identity-jwt/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-9.0-512BD4)](https://dotnet.microsoft.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1)](https://www.postgresql.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
